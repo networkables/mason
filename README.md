@@ -8,6 +8,8 @@ The network toolbox
 
 Mason is a network discovery and monitoring tool.  It includes common network tools such as ping, traceroute, and snmp data fetching providing visibility of networks.  Discovered devices are reguarly monitored by ping with historical data graphed for analysis.
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/networkables/mason)](https://goreportcard.com/report/github.com/networkables/mason)
+
 ---
 
 ## Quickstart
