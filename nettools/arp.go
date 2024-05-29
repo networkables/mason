@@ -79,7 +79,7 @@ func (p *pkg) FindUsingIfNameHardwareAddrOf(ctx context.Context, ifname string, 
 	}
 	entry.MAC = mac
 
-	// TOOD: multi writer enabled
+	// TODO: multi writer enabled
 	p.arptable[target] = mac
 
 	return entry, nil

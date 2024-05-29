@@ -42,7 +42,7 @@ func (w WUI) wuiDevicePageHandler(wr http.ResponseWriter, r *http.Request) {
 }
 
 func (w WUI) wuiDeviceMain(r *http.Request) g.Node {
-	// Errors need to be restructed so code does not continue to execute before getting to html
+	// Errors need to be restricted so code does not continue to execute before getting to html
 	var (
 		d       device.Device
 		errNode g.Node

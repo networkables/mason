@@ -132,7 +132,7 @@ func (b *memoryBus) Run(ctx context.Context) {
 }
 
 func (b *memoryBus) sendEvent(e Event) {
-	// TODO: Need a watchdog on this incase a recieve blocks up
+	// TODO: Need a watchdog on this incase a receive blocks up
 	//   - Or maybe a way to filter what is sent?
 	// log.Debug("\tbus sendout start")
 	for _, outch := range b.outbound {

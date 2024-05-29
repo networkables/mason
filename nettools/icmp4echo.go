@@ -190,6 +190,9 @@ func rawPing4(ctx context.Context, target netip.Addr, ttl int, listenAddress net
 	if !allowAllErrors {
 
 		assembled, err := buildIcmpFilterForID(uint32(icmpID))
+		if err != nil {
+			return response, err
+		}
 		err = pc.SetBPF(assembled)
 		if err != nil {
 			return response, err

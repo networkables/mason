@@ -6,8 +6,8 @@ package nettools
 
 import (
 	"crypto/tls"
+	"strconv"
 	"time"
-  "strconv"
 )
 
 var _ TLSer = (*pkg)(nil)

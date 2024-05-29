@@ -177,9 +177,9 @@ func ipSubnetStrToPrefix(ip, mask string) netip.Prefix {
 type snmpRequestOptionFunc func(*snmpRequestOptions)
 
 type snmpRequestOptions struct {
-	community               string
-	port                    int
-	responseTimeout         time.Duration
+	community       string
+	port            int
+	responseTimeout time.Duration
 }
 
 func defaultSnmpRequestOptions() *snmpRequestOptions {
@@ -207,7 +207,6 @@ func WithSnmpCommunity(community string) snmpRequestOptionFunc {
 		o.community = community
 	}
 }
-
 
 func applySnmpRequestOptions(options ...snmpRequestOptionFunc) *snmpRequestOptions {
 	opts := defaultSnmpRequestOptions()
