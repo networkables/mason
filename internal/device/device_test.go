@@ -679,9 +679,11 @@ func TestDevice_Merge(t *testing.T) {
 		wantUpdated bool
 	}{
 		"Empty": {
-			starting:    Device{},
-			in:          Device{},
-			want:        Device{},
+			starting: Device{},
+			in:       Device{},
+			want: Device{
+				Name: "invalid IP",
+			},
 			wantUpdated: false,
 		},
 		"Updated": {
