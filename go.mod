@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/ssh v0.0.0-20240401141849-854cddfa2917
 	github.com/charmbracelet/wish v1.4.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-echarts/go-echarts/v2 v2.4.0-rc1
+	github.com/go-echarts/go-echarts/v2 v2.4.0-rc2
 	github.com/go-graphite/go-whisper v0.0.0-20230526115116-e3110f57c01c
 	github.com/google/go-cmp v0.6.0
 	github.com/gosnmp/gosnmp v1.37.0
