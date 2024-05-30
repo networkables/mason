@@ -6,9 +6,9 @@ require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
-	github.com/charmbracelet/log v0.3.1
-	github.com/charmbracelet/ssh v0.0.0-20240301204039-e79ff702f5b3
-	github.com/charmbracelet/wish v1.3.2
+	github.com/charmbracelet/log v0.4.0
+	github.com/charmbracelet/ssh v0.0.0-20240401141849-854cddfa2917
+	github.com/charmbracelet/wish v1.4.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-echarts/go-echarts/v2 v2.4.0-rc1
 	github.com/go-graphite/go-whisper v0.0.0-20230526115116-e3110f57c01c
@@ -33,7 +33,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/keygen v0.5.0 // indirect
 	github.com/charmbracelet/x/errors v0.0.0-20240117030013-d31dba354651 // indirect
-	github.com/charmbracelet/x/exp/term v0.0.0-20240229115032-4b79243a3516 // indirect
+	github.com/charmbracelet/x/exp/term v0.0.0-20240328150354-ab9afc214dfd // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
 	github.com/creack/pty v1.1.21 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
