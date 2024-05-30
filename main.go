@@ -8,6 +8,13 @@ import (
 	"github.com/networkables/mason/internal/commands"
 )
 
+var (
+	Version    string
+	Commit     string
+	CommitDate string
+	TreeState  string
+)
+
 func main() {
 	commands.RootExecute()
 }
