@@ -50,103 +50,59 @@ func (w WUI) wuiNetworksMain(err error) g.Node {
 	}
 	nets := w.m.ListNetworks()
 	network.SortNetworksByAddr(nets)
-	return h.Div(
-		h.ID("networkscontent"),
-		h.Class("grid grid-cols-12 grid-rows-[min-content] gap-y-12 p-4 lg:gap-x-12 lg:p-10"),
-		h.Section(
-			h.Class("card col-span-12 overflow-hidden bg-base-100 shadow-sm xl:col-span-10"),
-			h.Div(
-				h.Class("card-body grow-0"),
-				h.H2(
-					h.Class("card-title"),
-					h.A(
-						h.Class("link-hover link"),
-						g.Text("Networks")),
-				),
-				h.Div(
-					h.Class("overflow-x-auto"),
-					networksToTable(nets),
-				),
-			),
+	return grid("networkscontent",
+		wuiCard("Networks",
+			networksToTable(nets),
 		),
-		h.Section(
-			h.Class("card col-span-12 overflow-hidden bg-base-100 shadow-sm xl:col-span-10"),
+		wuiCard("Add Network",
 			h.Div(
-				h.Class("card-body grow-0"),
-				h.H2(
-					h.Class("card-title"),
-					h.A(
-						h.Class("link-hover link"),
-						g.Text("Add Network")),
-				),
-				h.Div(
-					errNode,
-					h.FormEl(
-						hx.Post("/api/networks"),
-						hx.Target("#networkscontent"),
-						hx.Swap("outerHTML"),
-						h.Div(
-							h.Class("form-control"),
-							h.Label(
-								h.Class("label"),
-								h.Span(h.Class("label-text"), g.Text("Name")),
-								h.Input(
-									h.Type("text"),
-									h.Name(wuiNetworksFormName),
-									h.Placeholder("Custom Name"),
-									h.Class("input input-bordered w-1/2"),
-								),
-							),
-							h.Label(
-								h.Class("label"),
-								h.Span(h.Class("label-text"), g.Text("Prefix")),
-								h.Input(
-									h.Type("text"),
-									h.Name(wuiNetworksFormPrefix),
-									h.Placeholder("192.168.100.1/24"),
-									h.Class("input input-bordered w-1/2"),
-								),
-							),
-							h.Label(
-								h.Class("label cursor-pointer"),
-								h.Span(h.Class("label-text"), g.Text("Scan network immediately")),
-								h.Input(
-									h.Type("checkbox"),
-									h.Name(wuiNetworksFormScanNow),
-									g.Attr("checked", "checked"),
-									h.Class("checkbox checkbox-primary"),
-								),
+				errNode,
+				h.FormEl(
+					hx.Post("/api/networks"),
+					hx.Target("#networkscontent"),
+					hx.Swap("outerHTML"),
+					h.Div(
+						h.Class("form-control"),
+						h.Label(
+							h.Class("label"),
+							h.Span(h.Class("label-text"), g.Text("Name")),
+							h.Input(
+								h.Type("text"),
+								h.Name(wuiNetworksFormName),
+								h.Placeholder("Custom Name"),
+								h.Class("input input-bordered w-1/2"),
 							),
 						),
-						h.Div(
-							h.Class("flex gap-4 py-4"),
-							h.Button(h.Class("btn btn-primary grow"), g.Text("Add Network")),
+						h.Label(
+							h.Class("label"),
+							h.Span(h.Class("label-text"), g.Text("Prefix")),
+							h.Input(
+								h.Type("text"),
+								h.Name(wuiNetworksFormPrefix),
+								h.Placeholder("192.168.1.1/24"),
+								h.Class("input input-bordered w-1/2"),
+							),
 						),
+						h.Label(
+							h.Class("label cursor-pointer"),
+							h.Span(h.Class("label-text"), g.Text("Scan network immediately")),
+							h.Input(
+								h.Type("checkbox"),
+								h.Name(wuiNetworksFormScanNow),
+								g.Attr("checked", "checked"),
+								h.Class("checkbox checkbox-primary"),
+							),
+						),
+					),
+					h.Div(
+						h.Class("flex gap-4 py-4"),
+						h.Button(h.Class("btn btn-primary grow"), g.Text("Add Network")),
 					),
 				),
 			),
 		),
 	)
 }
-
-// func networksToTable(nets []Network) g.Node {
-// 	rows := make([]g.Node, 0, len(nets))
-// 	for _, net := range nets {
-// 		rows = append(rows, networkToTD(net))
-// 	}
-// 	return h.Table(
-// 		h.Class("table table-zebra"),
-// 		h.THead(
-// 			h.Tr(
-// 				h.Th(g.Text("Name")),
-// 				h.Th(g.Text("Prefix")),
-// 			),
-// 		),
-// 		h.TBody(
-// 			rows...,
-// 		),
-// 	)
-// }
 
 func networksToTable(nets []network.Network) g.Node {
 	return wuiTable(

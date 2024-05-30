@@ -55,13 +55,5 @@ func (w WUI) dashboardContent() g.Node {
 				},
 			),
 		),
-		// netStatBox(
-		// 	"Media",
-		// 	netip.MustParsePrefix("192.168.1.1/24"),
-		// 	110,
-		// 	254,
-		// 	1450*time.Microsecond,
-		// 	5100*time.Microsecond,
-		// ),
 	)
 }

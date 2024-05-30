@@ -31,24 +31,10 @@ func (w WUI) wuiDevicesMain() g.Node {
 		hx.Get("/api/devices"),
 		hx.Trigger("every 60s"),
 		hx.Swap("innerHTML"),
-		h.Div(
-			h.Class("grid grid-cols-12 grid-rows-[min-content] gap-y-12 p-4 lg:gap-x-12 lg:p-10"),
-			h.Section(
-				h.Class("card col-span-12 overflow-hidden bg-base-100 shadow-sm xl:col-span-10"),
-				h.Div(
-					h.Class("card-body grow-0"),
-					h.H2(
-						h.Class("card-title"),
-						h.A(
-							h.Class("link-hover link"),
-							g.Text("Devices as of "+time.Now().Format("15:04")),
-						),
-					),
-					h.Div(
-						h.Class("overflow-x-auto"),
-						devicesToTable(devs),
-					),
-				),
+		grid("",
+			wuiCard(
+				"Devices as of "+time.Now().Format("15:04"),
+				devicesToTable(devs),
 			),
 		),
 	)
