@@ -84,7 +84,7 @@ func runCmdServer() error {
 }
 
 func startMason(ctx context.Context, cfg *config.Config) (*server.Mason, error) {
-	if !server.HasCapabilities() {
+	if !cfg.Server.IgnoreCap && !server.HasCapabilities() {
 		return nil, errors.New("not all capabilities are present, run sudo ./mason sys setcap")
 	}
 

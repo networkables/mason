@@ -172,12 +172,21 @@ func cfgProcLevel(prefix string, val reflect.Value) []g.Node {
 
 	for i := 0; i < val.NumField(); i++ {
 		field := tp.Field(i)
+		fieldType := field.Type
+		if field.Type.Kind() == reflect.Pointer {
+			fieldType = field.Type.Elem()
+		}
+
 		fieldval := val.Field(i)
+		if fieldval.Kind() == reflect.Pointer {
+			fieldval = fieldval.Elem()
+		}
+
 		fieldname := field.Name
 		if prefix != "" {
 			fieldname = prefix + "." + fieldname
 		}
-		switch field.Type.Kind() {
+		switch fieldType.Kind() {
 		case reflect.Struct:
 			nodes = append(nodes, cfgProcLevel(fieldname, fieldval)...)
 		default:
@@ -188,7 +197,11 @@ func cfgProcLevel(prefix string, val reflect.Value) []g.Node {
 }
 
 func cfgValToNode(name string, val reflect.Value) g.Node {
-	switch val.Type().Kind() {
+	if val.Kind() == reflect.Pointer {
+		val = val.Elem()
+	}
+
+	switch val.Kind() {
 	case reflect.Int:
 		return h.Tr(
 			h.Td(g.Text(name)),
@@ -209,7 +222,6 @@ func cfgValToNode(name string, val reflect.Value) g.Node {
 				h.Td(g.Text(fmt.Sprintf("%d", val.Interface().([]int)))),
 			)
 		}
-
 	}
 	return h.Tr(
 		h.Td(g.Text(name)),

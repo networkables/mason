@@ -10,12 +10,11 @@ import (
 )
 
 type Bus struct {
-	MaxEvents               *int
-	MaxErrors               *int
-	InboundSize             *int
-	EnableDebugLog          *bool
-	EnableErrorLog          *bool
-	CheckErrorTypeOnPublish *bool
+	MaxEvents      *int
+	MaxErrors      *int
+	InboundSize    *int
+	EnableDebugLog *bool
+	EnableErrorLog *bool
 }
 
 const (
