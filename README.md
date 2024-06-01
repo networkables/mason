@@ -1,6 +1,6 @@
 # Mason
 
-![Mason mascot](/internal/static/static/images/mason_gopher_small.jpeg)
+![Mason mascot](/internal/static/static/images/mason_gopher_2_small.jpeg)
 
 The network toolbox
 
