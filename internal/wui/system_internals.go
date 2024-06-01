@@ -109,6 +109,13 @@ func toTD(name string, value string) g.Node {
 	)
 }
 
+func toTHTD(name string, value string) g.Node {
+	return h.Tr(
+		h.Th(g.Text(name)),
+		h.Td(g.Text(value)),
+	)
+}
+
 func wuiEventsToTable(events []bus.HistoricalEvent) g.Node {
 	return wuiTable([]string{"Time", "Name", "Value"},
 		g.Group(
