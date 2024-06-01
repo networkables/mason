@@ -43,6 +43,33 @@ Mason is a network discovery and monitoring tool.  It includes common network to
     - Different monitoring intervals for servers vs. client devices
 - Charting of ping response times over time
 
+## Screenshots
+
+### Dashboard / Start Page
+![Mason Dashboard](https://github.com/networkables/images/raw/main/mason/screenshots/mason_dashboard.png)
+
+### Device
+
+Devices List
+![Mason Devices Table](https://github.com/networkables/images/raw/main/mason/screenshots/mason_devices.png)
+
+Device Detail
+![Mason Device Detail](https://github.com/networkables/images/raw/main/mason/screenshots/mason_device_detail.png)
+
+Device Detail (Ping Response Time)
+![Mason Device Detail Ping](https://github.com/networkables/images/raw/main/mason/screenshots/mason_device_ping_focus.png)
+
+### Tools
+
+Ping
+![Mason Tools Ping](https://github.com/networkables/images/raw/main/mason/screenshots/mason_tool_ping.png)
+
+Traceroute
+![Mason Tools Traceroute](https://github.com/networkables/images/raw/main/mason/screenshots/mason_tool_traceroute.png)
+
+TLS Information
+![Mason Tools TLS](https://github.com/networkables/images/raw/main/mason/screenshots/mason_tool_tls.png)
+
 ## Support
 
 Mason is still in initial development and has plenty of rough edges.  If you find a bug or have an issue, please open an Github issue.
