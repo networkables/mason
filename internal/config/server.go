@@ -10,24 +10,28 @@ import (
 )
 
 type Server struct {
-	TUIPort *string
-	WebPort *string
+	TUIPort   *string
+	WebPort   *string
+	IgnoreCap bool
 }
 
 const (
-	serverCfgKey  = "server"
-	tuiPortCfgKey = "tuiport"
-	webPortCfgKey = "webport"
+	serverCfgKey    = "server"
+	tuiPortCfgKey   = "tuiport"
+	webPortCfgKey   = "webport"
+	ignoreCapCfgKey = "ignorecap"
 )
 
 var (
-	cfgServerTuiPortKey = Key(serverCfgKey, tuiPortCfgKey)
-	cfgServerWebPortKey = Key(serverCfgKey, webPortCfgKey)
+	cfgServerTuiPortKey   = Key(serverCfgKey, tuiPortCfgKey)
+	cfgServerWebPortKey   = Key(serverCfgKey, webPortCfgKey)
+	cfgServerIgnoreCapKey = Key(serverCfgKey, ignoreCapCfgKey)
 )
 
 func cfgServerSetDefaults() {
 	viper.SetDefault(cfgServerTuiPortKey, "4322")
 	viper.SetDefault(cfgServerWebPortKey, "4380")
+	viper.SetDefault(cfgServerIgnoreCapKey, false)
 }
 
 func CfgServerBuildAndBindFlags(pflags *pflag.FlagSet, cfg *Server) {
@@ -46,4 +50,12 @@ func CfgServerBuildAndBindFlags(pflags *pflag.FlagSet, cfg *Server) {
 		"Port the web ui listens on",
 	)
 	viper.BindPFlag(cfgServerWebPortKey, pflags.Lookup(cfgServerWebPortKey))
+
+	pflags.BoolVar(
+		&cfg.IgnoreCap,
+		cfgServerIgnoreCapKey,
+		cfg.IgnoreCap,
+		"Ignore if the required system capabilities are present",
+	)
+	viper.BindPFlag(cfgServerIgnoreCapKey, pflags.Lookup(cfgServerIgnoreCapKey))
 }

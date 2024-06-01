@@ -124,54 +124,30 @@ func deviceToTable(d device.Device) g.Node {
 	return h.Table(
 		h.Class("table table-zebra"),
 		h.TBody(
-			// h.Tr(h.Th(svgBarChart()), h.Td(g.Text(" "))),
-			h.Tr(h.Th(g.Text("Name")), h.Td(g.Text(d.Name))),
-			h.Tr(h.Th(g.Text("DNS Name")), h.Td(g.Text(d.Meta.DnsName))),
-			h.Tr(h.Th(g.Text("Addr")), h.Td(g.Text(d.Addr.String()))),
-			h.Tr(h.Th(g.Text("MAC")), h.Td(g.Text(d.MAC.String()))),
-			h.Tr(h.Th(g.Text("Manufacturer")), h.Td(g.Text(d.Meta.Manufacturer))),
-			h.Tr(
-				h.Th(g.Text("Discovered")),
-				h.Td(g.Text(d.DiscoveredAtString()+" by "+string(d.DiscoveredBy))),
-			),
-			h.Tr(h.Th(g.Text("First Seen")), h.Td(g.Text(d.FirstSeenString()))),
-			h.Tr(
-				h.Th(g.Text("Last Seen")),
-				h.Td(g.Text(d.LastSeenString()+"("+d.LastSeenDurString(time.Since)+")")),
-			),
-			toTD("Last Ping Mean", d.LastPingMeanString()),
-			toTD("Last Ping Maximum", d.LastPingMaximumString()),
-			h.Tr(h.Th(g.Text("Open Ports")), h.Td(g.Text(fmt.Sprintf("%d", d.Server.Ports)))),
-			h.Tr(
-				h.Th(g.Text("Last Port Scan")),
-				h.Td(g.Text(fmt.Sprintf("%s", device.DateTimeFmt(d.Server.LastScan)))),
-			),
-			h.Tr(h.Th(g.Text("Tags")), h.Td(g.Text(fmt.Sprintf("%s", d.Meta.Tags)))),
+			toTHTD("Name", d.Name),
+			toTHTD("DNS Name", d.Meta.DnsName),
+			toTHTD("Addr", d.Addr.String()),
+			toTHTD("MAC", d.MAC.String()),
+			toTHTD("Manufacturer", d.Meta.Manufacturer),
+			toTHTD("Discovered", d.DiscoveredAtString()+" by "+string(d.DiscoveredBy)),
+			toTHTD("First Seen", d.FirstSeenString()),
+			toTHTD("Last Seen", d.LastSeenString()+"("+d.LastSeenDurString(time.Since)+")"),
+			toTHTD("Last Ping Mean", d.LastPingMeanString()),
+			toTHTD("Last Ping Maximum", d.LastPingMaximumString()),
 
-			h.Tr(h.Th(g.Text("SNMP Name")), h.Td(g.Text(d.SNMP.Name))),
-			h.Tr(h.Th(g.Text("SNMP Description")), h.Td(g.Text(d.SNMP.Description))),
-			h.Tr(h.Th(g.Text("SNMP Community")), h.Td(g.Text(d.SNMP.Community))),
-			h.Tr(h.Th(g.Text("SNMP Port")), h.Td(g.Text(strconv.Itoa(d.SNMP.Port)))),
-			h.Tr(
-				h.Th(g.Text("SNMP LastCheck")),
-				h.Td(g.Text(device.DateTimeFmt(d.SNMP.LastSNMPCheck))),
-			),
-			h.Tr(
-				h.Th(g.Text("SNMP Has ARP Table")),
-				h.Td(g.Text(fmt.Sprintf("%t", d.SNMP.HasArpTable))),
-			),
-			h.Tr(
-				h.Th(g.Text("SNMP LastArpTableScan")),
-				h.Td(g.Text(device.DateTimeFmt(d.SNMP.LastArpTableScan))),
-			),
-			h.Tr(
-				h.Th(g.Text("SNMP Interfaces")),
-				h.Td(g.Text(fmt.Sprintf("%t", d.SNMP.HasInterfaces))),
-			),
-			h.Tr(
-				h.Th(g.Text("SNMP LastInterfacesScan")),
-				h.Td(g.Text(device.DateTimeFmt(d.SNMP.LastInterfacesScan))),
-			),
+			toTHTD("Open Ports", fmt.Sprintf("%d", d.Server.Ports)),
+			toTHTD("Last Port Scan", fmt.Sprintf("%s", device.DateTimeFmt(d.Server.LastScan))),
+			toTHTD("Tags", fmt.Sprintf("%s", d.Meta.Tags)),
+
+			toTHTD("SNMP Name", d.SNMP.Name),
+			toTHTD("SNMP Description", d.SNMP.Description),
+			toTHTD("SNMP Community", d.SNMP.Community),
+			toTHTD("SNMP Port", strconv.Itoa(d.SNMP.Port)),
+			toTHTD("SNMP LastCheck", device.DateTimeFmt(d.SNMP.LastSNMPCheck)),
+			toTHTD("SNMP Has ARP Table", fmt.Sprintf("%t", d.SNMP.HasArpTable)),
+			toTHTD("SNMP LastArpTableScan", device.DateTimeFmt(d.SNMP.LastArpTableScan)),
+			toTHTD("SNMP Interfaces", fmt.Sprintf("%t", d.SNMP.HasInterfaces)),
+			toTHTD("SNMP LastInterfacesScan", device.DateTimeFmt(d.SNMP.LastInterfacesScan)),
 		),
 	)
 }
