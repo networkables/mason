@@ -14,7 +14,7 @@ require (
 	github.com/go-graphite/go-whisper v0.0.0-20230526115116-e3110f57c01c
 	github.com/google/go-cmp v0.6.0
 	github.com/gosnmp/gosnmp v1.37.0
-	github.com/maragudk/gomponents v0.20.2
+	github.com/maragudk/gomponents v0.20.3
 	github.com/maragudk/gomponents-htmx v0.5.0
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/miekg/dns v1.1.59
