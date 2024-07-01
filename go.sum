@@ -71,8 +71,8 @@ github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0VQdvPDY=
 github.com/magiconair/properties v1.8.7/go.mod h1:Dhd985XPs7jluiymwWYZ0G4Z61jb3vdS329zhj2hYo0=
-github.com/maragudk/gomponents v0.20.2 h1:39FhnBNNCJzqNcD9Hmvp/5xj0otweFoyvVgFG6kXoy0=
-github.com/maragudk/gomponents v0.20.2/go.mod h1:nHkNnZL6ODgMBeJhrZjkMHVvNdoYsfmpKB2/hjdQ0Hg=
+github.com/maragudk/gomponents v0.20.4 h1:8ayYSzCyz1EUl/+LU5vOBR/K2wI18W7SscNAzzsxsDo=
+github.com/maragudk/gomponents v0.20.4/go.mod h1:nHkNnZL6ODgMBeJhrZjkMHVvNdoYsfmpKB2/hjdQ0Hg=
 github.com/maragudk/gomponents-htmx v0.5.0 h1:sWtiRa72YmymgxccjTNZW3h0akKsZvnhYke9RQiS9dk=
 github.com/maragudk/gomponents-htmx v0.5.0/go.mod h1:XgI7WE6ECWlyeVQ9Ix3R6aoKS4HtCSYtuQ4iH27GVDE=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
