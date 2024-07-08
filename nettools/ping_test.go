@@ -40,7 +40,7 @@ import (
 
 func TestPing_rawPingUdp4(t *testing.T) {
 	ctx := context.Background()
-	target := netip.MustParseAddr("192.168.86.1")
+	target := netip.MustParseAddr("127.0.0.1")
 	ttl := 2
 	listenAddress := netip.MustParseAddr("0.0.0.0")
 	readTimeout := time.Second
