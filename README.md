@@ -33,7 +33,7 @@ docker run \
   -p "4380:4380" \
   -p "4322:4322" \
   -p "2055:2055/udp" \
-  mason server
+  ghcr.io/networkables/mason server
 ```
 
 #### Persist data between runs
@@ -52,7 +52,7 @@ docker run \
   -p "2055:2055/udp" \
   -v ./mason/data:/home/nonroot/data \
   -v ./mason/config:/home/nonroot/config \
-  mason server
+  ghcr.io/networkables/mason server
 ```
 
 #### Persist and run privileged to allow traceroute
@@ -69,7 +69,7 @@ docker run \
   -p "2055:2055/udp" \
   -v ./mason/data:/home/nonroot/data \
   -v ./mason/config:/home/nonroot/config \
-  mason server --asn.enabled=true --oui.enabled=true --discovery.icmp.privileged=true
+  ghcr.io/networkables/mason server --asn.enabled=true --oui.enabled=true --discovery.icmp.privileged=true
 ```
 
 ## Features
