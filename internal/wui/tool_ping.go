@@ -7,7 +7,6 @@ package wui
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"time"
 
@@ -16,21 +15,23 @@ import (
 	hx "github.com/maragudk/gomponents-htmx"
 	h "github.com/maragudk/gomponents/html"
 
+	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/nettools"
 )
 
 func (w WUI) wuiToolPingHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
 		w.wuiToolPing(nil, nil, nil),
 	)
-	w.basePage("ping", content, nil).Render(wr)
+	w.basePage(ctx, "ping", content, nil).Render(wr)
 }
 
 func wuiPingResultTable(
 	stats *nettools.Icmp4EchoResponseStatistics,
-	mac net.HardwareAddr,
+	mac *model.MAC,
 	manu string,
 ) g.Node {
 	var macstr string
@@ -80,12 +81,12 @@ func wuiIcmpStatsTable(stats *nettools.Icmp4EchoResponseStatistics) g.Node {
 
 func (w WUI) wuiToolPing(
 	icmpstats *nettools.Icmp4EchoResponseStatistics,
-	mac net.HardwareAddr,
+	mac *model.MAC,
 	err error,
 ) g.Node {
 	var manu string
 	if mac != nil {
-		manu, _ = w.m.OuiLookup(mac)
+		manu = w.m.OuiLookup(mac.Addr())
 	}
 	var inValue g.Node
 	if icmpstats != nil {
@@ -126,10 +127,11 @@ func (w WUI) wuiApiToolPingHandler(wr http.ResponseWriter, r *http.Request) {
 	target := r.PostFormValue(wuiToolTarget)
 	count := 10
 	timeout := 100 * time.Millisecond
-	stats, err := w.m.IcmpPing(ctx, target, count, timeout)
+	priviledged := false
+	stats, err := w.m.IcmpPing(ctx, target, count, timeout, priviledged)
 	if err != nil {
 		log.Error("wuiApiToolPingHandler", "error", err)
 	}
 	mac, _ := w.m.ArpPing(ctx, target, timeout)
-	w.wuiToolPing(&stats, mac, err).Render(wr)
+	w.wuiToolPing(&stats, &mac, err).Render(wr)
 }

@@ -5,6 +5,7 @@
 package wui
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -12,21 +13,22 @@ import (
 	hx "github.com/maragudk/gomponents-htmx"
 	h "github.com/maragudk/gomponents/html"
 
-	"github.com/networkables/mason/internal/device"
+	"github.com/networkables/mason/internal/model"
 )
 
 func (w WUI) wuiDevicesPageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
-		w.wuiDevicesMain(),
+		w.wuiDevicesMain(ctx),
 	)
-	w.basePage("devices", content, nil).Render(wr)
+	w.basePage(ctx, "devices", content, nil).Render(wr)
 }
 
-func (w WUI) wuiDevicesMain() g.Node {
-	devs := w.m.ListDevices()
-	device.SortDevicesByAddr(devs)
+func (w WUI) wuiDevicesMain(ctx context.Context) g.Node {
+	devs := w.m.ListDevices(ctx)
+	model.SortDevicesByAddr(devs)
 	return h.Div(
 		hx.Get("/api/devices"),
 		hx.Trigger("every 60s"),
@@ -41,10 +43,11 @@ func (w WUI) wuiDevicesMain() g.Node {
 }
 
 func (w WUI) wuiDevicesApiHandler(wr http.ResponseWriter, r *http.Request) {
-	w.wuiDevicesMain().Render(wr)
+	ctx := context.TODO()
+	w.wuiDevicesMain(ctx).Render(wr)
 }
 
-func devicesToTable(devs []device.Device) g.Node {
+func devicesToTable(devs []model.Device) g.Node {
 	rows := make([]g.Node, 0, len(devs))
 	for _, dev := range devs {
 		rows = append(rows, deviceToTD(dev))
@@ -66,7 +69,7 @@ func devicesToTable(devs []device.Device) g.Node {
 	)
 }
 
-func deviceToTD(d device.Device) g.Node {
+func deviceToTD(d model.Device) g.Node {
 	url := "/device/" + d.Addr.String()
 	detailsBtn := h.A(h.Href(url), svgMagnifyGlass())
 	// graphBtn := h.A(h.Href(url), svgBarChart())

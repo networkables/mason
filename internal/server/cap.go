@@ -9,24 +9,39 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 	"syscall"
 
 	"github.com/charmbracelet/log"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
-func appLocation() string {
-	loc, err := os.Executable()
+func appLocation() (path string, isgorun bool) {
+	var err error
+	path, err = os.Executable()
 	if err != nil {
-		log.Error("appLocation", "error", err)
+		log.Fatal("appLocation", "error", err)
 	}
-	return loc
+	isgorun = strings.Contains(path, "go-build")
+	return path, isgorun
 }
 
-func HasCapabilities() bool {
-	loc := appLocation()
+func HasCapabilities(cfg *Config) bool {
+	// do not test if no privileges are required
+	if !cfg.Discovery.Icmp.Privileged && !cfg.Discovery.Arp.Enabled &&
+		!cfg.Pinger.Privileged {
+		return true
+	}
+
+	// TODO: below does not work in a container
+	return true
+
+	loc, isgorun := appLocation()
 	c, err := cap.GetFile(loc)
 	if err != nil {
+		if isgorun {
+			log.Warn("run via 'go run' is not supported when escalated privileges are required")
+		}
 		if err == syscall.ENODATA {
 			return false
 		}
@@ -37,7 +52,12 @@ func HasCapabilities() bool {
 		log.Error("hasCapabilities", "error", err)
 		return false
 	}
-	return hasRawNet
+	// log.Printf(" Priv: %t  hasRawNet: %t", *cfg.Discovery.IcmpPing.Privileged, hasRawNet)
+	if (cfg.Discovery.Icmp.Privileged || cfg.Discovery.Arp.Enabled || cfg.Pinger.Privileged) &&
+		!hasRawNet {
+		return false
+	}
+	return true
 }
 
 func SetCapabilities() error {
@@ -58,7 +78,10 @@ func SetCapabilities() error {
 	if err != nil {
 		return err
 	}
-	loc := appLocation()
+	loc, isgorun := appLocation()
+	if isgorun {
+		return errors.New("cannot set capabilities when run with 'go run'")
+	}
 	err = todo.SetFile(loc)
 	if err != nil {
 		log.Error("setCapabilities", "file", loc, "error", err)

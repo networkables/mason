@@ -41,7 +41,8 @@ func init() {
 }
 
 func runCmdSysHasCap([]string) error {
-	good := server.HasCapabilities()
+	cfg := server.GetConfig()
+	good := server.HasCapabilities(cfg)
 	if good {
 		log.Info("mason has the required capabilities")
 		return nil

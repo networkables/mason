@@ -14,8 +14,10 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/networkables/mason/internal/config"
-	"github.com/networkables/mason/internal/stackerr"
+	"github.com/networkables/mason/internal/discovery"
+	"github.com/networkables/mason/internal/enrichment"
+	"github.com/networkables/mason/internal/model"
+	"github.com/networkables/mason/internal/pinger"
 )
 
 type (
@@ -52,19 +54,27 @@ type memoryBus struct {
 	maxerrors        int
 	enableddebuglog  bool
 	enableerrorlog   bool
+	minimumLogLevel  int
 }
 
-func New(cfg *config.Bus) *memoryBus {
-	return &memoryBus{
-		inbound:          make(chan Event, *cfg.InboundSize),
-		outbound:         make([]chan Event, 0),
-		historicalEvents: make([]HistoricalEvent, 0, *cfg.MaxEvents),
-		historicalErrors: make([]HistoricalError, 0, *cfg.MaxErrors),
-		maxhistory:       *cfg.MaxEvents,
-		maxerrors:        *cfg.MaxErrors,
-		enableddebuglog:  *cfg.EnableDebugLog,
-		enableerrorlog:   *cfg.EnableErrorLog,
+func New(cfg *Config) *memoryBus {
+	if cfg == nil {
+		log.Warn("creating memorybus with nil configuration")
+		cfg = &Config{}
 	}
+
+	bus := &memoryBus{
+		maxhistory:      cfg.MaxEvents,
+		maxerrors:       cfg.MaxErrors,
+		enableddebuglog: cfg.EnableDebugLog,
+		enableerrorlog:  cfg.EnableErrorLog,
+		minimumLogLevel: cfg.MinimumPriorityLevel,
+	}
+	bus.inbound = make(chan Event, cfg.InboundSize)
+	bus.outbound = make([]chan Event, 0)
+	bus.historicalEvents = make([]HistoricalEvent, 0, bus.maxhistory)
+	bus.historicalErrors = make([]HistoricalError, 0, bus.maxerrors)
+	return bus
 }
 
 func (b *memoryBus) AddListener() chan Event {
@@ -79,25 +89,32 @@ func (b *memoryBus) Publish(e Event) {
 	if b.enableddebuglog {
 		log.Debugf("buseevent %T : %s", e, e)
 	}
-	select {
-	case b.inbound <- e:
-	default:
-		log.Warnf("dropping bus events; %T %s", e, e)
+	b.inbound <- e
+}
+
+func classifyEvent(e Event) int {
+	switch e.(type) {
+	case model.EventDeviceUpdated:
+		return 1
+	case model.EventDeviceDiscovered, discovery.DiscoverDevicesFromSNMPDevice:
+		return 5
+	case enrichment.EnrichDeviceRequest:
+		return 6
+	case pinger.PerfPingDevicesEvent, model.ScanAllNetworksRequest, model.ScanNetworkRequest:
+		return 10
+	case model.DiscoveredNetwork, discovery.DiscoverNetworksFromSNMPDevice:
+		return 11
+	case model.EventDeviceAdded, model.NetworkAddedEvent:
+		return 50
 	}
+	return 99
 }
 
 func (b *memoryBus) recordEvent(e Event) {
 	ts := time.Now()
 
-	var se stackerr.StackErr
 	err, ok := e.(error)
 	if ok {
-		se, ok = e.(stackerr.StackErr)
-		if !ok {
-			se = stackerr.New(err)
-			log.Warn("non stackerr error", "error", err, "stack", "stack", se.Stack)
-			// err = se
-		}
 		if b.enableerrorlog {
 			log.Error(err)
 		}
@@ -106,6 +123,11 @@ func (b *memoryBus) recordEvent(e Event) {
 		}
 		b.historicalErrors = append(b.historicalErrors, HistoricalError{E: err, Ts: ts})
 	} else {
+		if b.minimumLogLevel != 0 {
+			if classifyEvent(e) < b.minimumLogLevel {
+				return
+			}
+		}
 		// Only events are sent on the bus
 		if len(b.historicalEvents) > b.maxhistory {
 			// b.history = slices.Delete(b.history, 0, len(b.history)-b.maxhistory)

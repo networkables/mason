@@ -11,18 +11,16 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/bubbletea"
-
-	"github.com/networkables/mason/internal/server"
 )
 
 type Tui struct {
-	m          server.MasonReaderWriter
+	m          MasonReaderWriter
 	mainwindow tea.Model
 	statusbar  tea.Model
 	render     *lipgloss.Renderer
 }
 
-func New(m server.MasonReaderWriter) *Tui {
+func New(m MasonReaderWriter) *Tui {
 	return &Tui{
 		m: m,
 	}

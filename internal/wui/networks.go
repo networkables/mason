@@ -5,22 +5,24 @@
 package wui
 
 import (
+	"context"
 	"net/http"
 
 	g "github.com/maragudk/gomponents"
 	hx "github.com/maragudk/gomponents-htmx"
 	h "github.com/maragudk/gomponents/html"
 
-	"github.com/networkables/mason/internal/network"
+	"github.com/networkables/mason/internal/model"
 )
 
 func (w WUI) wuiNetworksPageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
-		w.wuiNetworksMain(nil),
+		w.wuiNetworksMain(ctx, nil),
 	)
-	w.basePage("networks", content, nil).Render(wr)
+	w.basePage(ctx, "networks", content, nil).Render(wr)
 }
 
 const (
@@ -30,6 +32,7 @@ const (
 )
 
 func (w *WUI) wuiNetworksApiCreate(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	name := r.PostFormValue(wuiNetworksFormName)
 	prefix := r.PostFormValue(wuiNetworksFormPrefix)
 	scannowstr := r.PostFormValue(wuiNetworksFormScanNow)
@@ -38,18 +41,18 @@ func (w *WUI) wuiNetworksApiCreate(wr http.ResponseWriter, r *http.Request) {
 	if scannowstr == "on" {
 		scannow = true
 	}
-	err := w.m.AddNetworkByName(name, prefix, scannow)
+	err := w.m.AddNetworkByName(ctx, name, prefix, scannow)
 
-	w.wuiNetworksMain(err).Render(wr)
+	w.wuiNetworksMain(ctx, err).Render(wr)
 }
 
-func (w WUI) wuiNetworksMain(err error) g.Node {
+func (w WUI) wuiNetworksMain(ctx context.Context, err error) g.Node {
 	var errNode g.Node
 	if err != nil {
 		errNode = errAlert(err)
 	}
-	nets := w.m.ListNetworks()
-	network.SortNetworksByAddr(nets)
+	nets := w.m.ListNetworks(ctx)
+	model.SortNetworksByAddr(nets)
 	return grid("networkscontent",
 		wuiCard("Networks",
 			networksToTable(nets),
@@ -104,20 +107,20 @@ func (w WUI) wuiNetworksMain(err error) g.Node {
 	)
 }
 
-func networksToTable(nets []network.Network) g.Node {
+func networksToTable(nets []model.Network) g.Node {
 	return wuiTable(
 		[]string{"Name", "Prefix"},
 		g.Group(
 			g.Map(
 				nets,
-				func(n network.Network) g.Node {
+				func(n model.Network) g.Node {
 					return networkToTD(n)
 				}),
 		),
 	)
 }
 
-func networkToTD(n network.Network) g.Node {
+func networkToTD(n model.Network) g.Node {
 	return h.Tr(
 		h.Td(g.Text(n.Name)),
 		h.Td(g.Text(n.Prefix.String())),

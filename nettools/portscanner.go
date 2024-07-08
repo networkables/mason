@@ -64,8 +64,8 @@ func (p *pkg) ScanTcpPorts(ctx context.Context, target netip.Addr, options ...po
 	return openports, nil
 }
 
-func buildTcpPortChecker(addr netip.Addr, timeout time.Duration) func(int) (int, error) {
-	return func(port int) (int, error) {
+func buildTcpPortChecker(addr netip.Addr, timeout time.Duration) func(context.Context, int) (int, error) {
+	return func(ctx context.Context, port int) (int, error) {
 		isopen, err := isTcpPortOpen(addr, port, timeout)
 		if isopen {
 			return port, nil

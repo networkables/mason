@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/dustin/go-humanize"
 	charts "github.com/go-echarts/go-echarts/v2/charts"
 	opts "github.com/go-echarts/go-echarts/v2/opts"
 	chartrender "github.com/go-echarts/go-echarts/v2/render"
@@ -25,26 +25,27 @@ import (
 	g "github.com/maragudk/gomponents"
 	h "github.com/maragudk/gomponents/html"
 
-	"github.com/networkables/mason/internal/device"
+	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/internal/pinger"
 )
 
 type EChartPoint []interface{}
 
 func (w WUI) wuiDevicePageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
-		w.wuiDeviceMain(r),
+		w.wuiDeviceMain(ctx, r),
 	)
 	extra := h.Script(h.Src("/static/javascript/echarts.min.js"))
-	w.basePage("devices", content, extra).Render(wr)
+	w.basePage(ctx, "devices", content, extra).Render(wr)
 }
 
-func (w WUI) wuiDeviceMain(r *http.Request) g.Node {
+func (w WUI) wuiDeviceMain(ctx context.Context, r *http.Request) g.Node {
 	// Errors need to be restricted so code does not continue to execute before getting to html
 	var (
-		d       device.Device
+		d       model.Device
 		errNode g.Node
 	)
 	id := r.PathValue("id")
@@ -52,75 +53,49 @@ func (w WUI) wuiDeviceMain(r *http.Request) g.Node {
 	if err != nil {
 		errNode = errAlert(err)
 	}
-	d, err = w.m.GetDeviceByAddr(addr)
+	d, err = w.m.GetDeviceByAddr(ctx, addr)
 	if err != nil {
 		errNode = errAlert(err)
 	}
 	dur := 6 * time.Hour
-	ctx := context.Background()
 
-	avgdata, err := w.m.ReadTimeseriesPoints(ctx, d, dur, pinger.TimeseriesAvgResponse{})
+	pingdata, err := w.m.ReadPerformancePings(ctx, d, dur)
 	if err != nil {
 		errNode = errAlert(err)
 	}
-	maxdata, err := w.m.ReadTimeseriesPoints(ctx, d, dur, pinger.TimeseriesMaxResponse{})
+
+	ipflow, err := w.m.FlowSummaryByIP(ctx, d.Addr)
 	if err != nil {
 		errNode = errAlert(err)
 	}
-	lossdata, err := w.m.ReadTimeseriesPoints(ctx, d, dur, pinger.TimeseriesPacketLoss{})
+	countryflow, err := w.m.FlowSummaryByCountry(ctx, d.Addr)
 	if err != nil {
 		errNode = errAlert(err)
 	}
-	return h.Div(
-		h.Div(
-			h.Class("grid grid-cols-12 grid-rows-[min-content] gap-y-12 p-4 lg:gap-x-12 lg:p-10"),
-			h.Section(
-				h.Class("card col-span-12 overflow-hidden bg-base-100 shadow-sm xl:col-span-10"),
-				errNode,
-				h.Div(h.Class("card-body grow-0"),
-					h.H2(h.Class("card-title"),
-						h.A(
-							h.Class("link-hover link"),
-							g.Text("Details"),
-						),
-					),
-					h.Div(
-						h.Class("overflow-x-auto"),
-						deviceToTable(d),
-					),
-				),
+	nameflow, err := w.m.FlowSummaryByName(ctx, d.Addr)
+	if err != nil {
+		errNode = errAlert(err)
+	}
+
+	return grid("",
+		widecard("Details", deviceToTable(d)),
+		g.If(errNode != nil, widecard("Error", errNode)),
+		graphcard("Ping Performance",
+			lineGraph3(
+				meantspoints2echartpoints(pingdata),
+				maxtspoints2echartpoints(pingdata),
 			),
-			h.Section(
-				h.Class("card col-span-12 overflow-hidden bg-base-100 shadow-sm xl:col-span-10"),
-				h.StyleEl(
-					g.Text(`
-						.container {margin-top:30px; display: flex;justify-content: center;align-items: center;} 
-            .item {margin: auto;}
-          `),
-				),
-				errNode,
-				h.Div(
-					h.Class("card-body grow-0"),
-					h.H2(h.Class("card-title"),
-						h.A(
-							h.Class("link-hover link"),
-							g.Text("Ping Performance"),
-						),
-					),
-					lineGraph3(
-						tspoints2echartpoints(avgdata),
-						tspoints2echartpoints(maxdata),
-					),
-					lineGraph4(
-						tspoints2echartpoints(lossdata),
-					),
-				),
+			lineGraph4(
+				losstspoints2echartpoints(pingdata),
 			),
 		),
+		widecard("NetOrg Stats", nameflowSummIPToTable(nameflow)),
+		widecard("Country Stats", countryflowSummIPToTable(countryflow)),
+		widecard("IP Stats", ipflowSummIPToTable(ipflow)),
 	)
 }
 
-func deviceToTable(d device.Device) g.Node {
+func deviceToTable(d model.Device) g.Node {
 	return h.Table(
 		h.Class("table table-zebra"),
 		h.TBody(
@@ -136,18 +111,64 @@ func deviceToTable(d device.Device) g.Node {
 			toTHTD("Last Ping Maximum", d.LastPingMaximumString()),
 
 			toTHTD("Open Ports", fmt.Sprintf("%d", d.Server.Ports)),
-			toTHTD("Last Port Scan", fmt.Sprintf("%s", device.DateTimeFmt(d.Server.LastScan))),
+			toTHTD("Last Port Scan", fmt.Sprintf("%s", model.DateTimeFmt(d.Server.LastScan))),
 			toTHTD("Tags", fmt.Sprintf("%s", d.Meta.Tags)),
 
 			toTHTD("SNMP Name", d.SNMP.Name),
 			toTHTD("SNMP Description", d.SNMP.Description),
 			toTHTD("SNMP Community", d.SNMP.Community),
 			toTHTD("SNMP Port", strconv.Itoa(d.SNMP.Port)),
-			toTHTD("SNMP LastCheck", device.DateTimeFmt(d.SNMP.LastSNMPCheck)),
+			toTHTD("SNMP LastCheck", model.DateTimeFmt(d.SNMP.LastSNMPCheck)),
 			toTHTD("SNMP Has ARP Table", fmt.Sprintf("%t", d.SNMP.HasArpTable)),
-			toTHTD("SNMP LastArpTableScan", device.DateTimeFmt(d.SNMP.LastArpTableScan)),
+			toTHTD("SNMP LastArpTableScan", model.DateTimeFmt(d.SNMP.LastArpTableScan)),
 			toTHTD("SNMP Interfaces", fmt.Sprintf("%t", d.SNMP.HasInterfaces)),
-			toTHTD("SNMP LastInterfacesScan", device.DateTimeFmt(d.SNMP.LastInterfacesScan)),
+			toTHTD("SNMP LastInterfacesScan", model.DateTimeFmt(d.SNMP.LastInterfacesScan)),
+		),
+	)
+}
+
+func ipflowSummIPToTable(fs []model.FlowSummaryForAddrByIP) g.Node {
+	return wuiTable([]string{"IP", "Country", "Org", "ASN", "In", "Out"},
+		g.Group(
+			g.Map(fs, func(f model.FlowSummaryForAddrByIP) g.Node {
+				return h.Tr(
+					h.Td(g.Text(f.Addr.String())),
+					h.Td(g.Text(f.Country)),
+					h.Td(g.Text(f.Name)),
+					h.Td(g.Text(f.Asn)),
+					h.Td(g.Text(humanize.Bytes(uint64(f.RecvBytes)))),
+					h.Td(g.Text(humanize.Bytes(uint64(f.XmitBytes)))),
+				)
+			}),
+		),
+	)
+}
+
+func nameflowSummIPToTable(fs []model.FlowSummaryForAddrByName) g.Node {
+	return wuiTable([]string{"Org", "In", "Out"},
+		g.Group(
+			g.Map(fs, func(f model.FlowSummaryForAddrByName) g.Node {
+				return h.Tr(
+					h.Td(g.Text(f.Name)),
+					h.Td(g.Text(humanize.Bytes(uint64(f.RecvBytes)))),
+					h.Td(g.Text(humanize.Bytes(uint64(f.XmitBytes)))),
+				)
+			}),
+		),
+	)
+}
+
+func countryflowSummIPToTable(fs []model.FlowSummaryForAddrByCountry) g.Node {
+	return wuiTable([]string{"Country", "Org", "In", "Out"},
+		g.Group(
+			g.Map(fs, func(f model.FlowSummaryForAddrByCountry) g.Node {
+				return h.Tr(
+					h.Td(g.Text(f.Country)),
+					h.Td(g.Text(f.Name)),
+					h.Td(g.Text(humanize.Bytes(uint64(f.RecvBytes)))),
+					h.Td(g.Text(humanize.Bytes(uint64(f.XmitBytes)))),
+				)
+			}),
 		),
 	)
 }
@@ -518,14 +539,38 @@ func renderToString(c interface{}) string {
 	return buf.String()
 }
 
-func tspoints2echartpoints(points []pinger.TimeseriesPoint) []EChartPoint {
+// func tspoints2echartpoints(points []pinger.TimeseriesPoint) []EChartPoint {
+// 	ret := make([]EChartPoint, len(points))
+// 	for i, point := range points {
+// 		if math.IsNaN(point.GetValue()) {
+// 			ret[i] = EChartPoint{point.GetTime(), 0}
+// 			continue
+// 		}
+// 		ret[i] = EChartPoint{point.GetTime(), point.GetValue()}
+// 	}
+// 	return ret
+// }
+
+func meantspoints2echartpoints(points []pinger.Point) []EChartPoint {
 	ret := make([]EChartPoint, len(points))
 	for i, point := range points {
-		if math.IsNaN(point.GetValue()) {
-			ret[i] = EChartPoint{point.GetTime(), 0}
-			continue
-		}
-		ret[i] = EChartPoint{point.GetTime(), point.GetValue()}
+		ret[i] = EChartPoint{point.Start, float64(point.Average) / float64(time.Millisecond)}
+	}
+	return ret
+}
+
+func maxtspoints2echartpoints(points []pinger.Point) []EChartPoint {
+	ret := make([]EChartPoint, len(points))
+	for i, point := range points {
+		ret[i] = EChartPoint{point.Start, float64(point.Maximum) / float64(time.Millisecond)}
+	}
+	return ret
+}
+
+func losstspoints2echartpoints(points []pinger.Point) []EChartPoint {
+	ret := make([]EChartPoint, len(points))
+	for i, point := range points {
+		ret[i] = EChartPoint{point.Start, point.Loss * 100.0}
 	}
 	return ret
 }

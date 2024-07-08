@@ -14,162 +14,109 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/emicklei/tre"
 
+	"github.com/networkables/mason/internal/asn"
 	"github.com/networkables/mason/internal/bus"
-	"github.com/networkables/mason/internal/config"
-	"github.com/networkables/mason/internal/device"
 	"github.com/networkables/mason/internal/discovery"
 	"github.com/networkables/mason/internal/enrichment"
-	"github.com/networkables/mason/internal/network"
+	"github.com/networkables/mason/internal/model"
+	"github.com/networkables/mason/internal/netflows"
+	"github.com/networkables/mason/internal/oui"
 	"github.com/networkables/mason/internal/pinger"
-	"github.com/networkables/mason/internal/stackerr"
-	"github.com/networkables/mason/internal/workerpool"
 	"github.com/networkables/mason/nettools"
 )
 
-type (
-	MasonReaderWriter interface {
-		MasonReader
-		MasonWriter
-		MasonNetworker
-	}
-)
-
-type MasonReader interface {
-	ListNetworks() []network.Network
-	CountNetworks() int
-	ListDevices() []device.Device
-	CountDevices() int
-	GetDeviceByAddr(netip.Addr) (device.Device, error)
-	ReadTimeseriesPoints(
-		context.Context,
-		device.Device,
-		time.Duration,
-		pinger.TimeseriesPoint,
-	) ([]pinger.TimeseriesPoint, error)
-	GetConfig() config.Config
-	GetInternalsSnapshot() MasonInternalsView
-	GetUserAgent() string
-	OuiLookup(mac net.HardwareAddr) (string, error)
-	GetNetworkStats() []network.NetworkStats
-	PingFailures() []device.Device
-	ServerDevices() []device.Device
-}
-
-type MasonWriter interface {
-	AddNetwork(network.Network) error
-	AddNetworkByName(string, string, bool) error
-}
-
-type MasonNetworker interface {
-	StringToAddr(string) (netip.Addr, error)
-	IcmpPingAddr(
-		context.Context,
-		netip.Addr,
-		int,
-		time.Duration,
-	) (nettools.Icmp4EchoResponseStatistics, error)
-	IcmpPing(
-		context.Context,
-		string,
-		int,
-		time.Duration,
-	) (nettools.Icmp4EchoResponseStatistics, error)
-	ArpPing(context.Context, string, time.Duration) (net.HardwareAddr, error)
-	Portscan(context.Context, string, *config.PortScannerConfig) ([]int, error)
-	GetExternalAddr(ctx context.Context) (netip.Addr, error)
-	Traceroute(context.Context, string) ([]nettools.Icmp4EchoResponseStatistics, error)
-	TracerouteAddr(context.Context, netip.Addr) ([]nettools.Icmp4EchoResponseStatistics, error)
-	FetchTLSInfo(context.Context, string) (nettools.TLS, error)
-	FetchSNMPInfo(context.Context, string) (nettools.SnmpInfo, error)
-	FetchSNMPInfoAddr(context.Context, netip.Addr) (nettools.SnmpInfo, error)
-	// ScanNetworkPrefix
-	// HostInformation
-	// InstanceInfo (external ip, traceroute to 1.1.1.1 & 8.8.8.8, hostinfo on external ip)
-	// SNMPWalk
-}
-
-var _ MasonReaderWriter = (*Mason)(nil)
-
 type Mason struct {
 	bus bus.Bus
-	cfg *config.Config
+	cfg *Config
 
 	// datastores
-	store StoreAll
+	store     Storer
+	flowstore NetflowStorer
 
-	// "Queues"
-	addressScanQ  chan netip.Addr
-	deviceEnrichQ chan enrichment.EnrichDeviceRequest
-	perfPingQ     chan device.Device
-	networkScanQ  chan network.Network
-
-	// worker pools
-	addressScanWP  *workerpool.Pool[netip.Addr, device.EventDeviceDiscovered]
-	deviceEnrichWP *workerpool.Pool[enrichment.EnrichDeviceRequest, device.Device]
-	perfPingWP     *workerpool.Pool[device.Device, pinger.PerformancePingResponseEvent]
-	networkScanWP  *workerpool.Pool[network.Network, string]
+	// Workers
+	enrichmentWorker     *enrichment.Worker
+	discoveryWorker      *discovery.Worker
+	networkScannerWorker *discovery.NetworkScannerWorker
+	pingerWorker         *pinger.Worker
+	netflowsWorker       *netflows.Worker
 
 	// status stuff
 	currentNetworkScan *string
+	busBackPressure    atomic.Int32
+	enrichBackPressure atomic.Int32
 }
 
-func New(
-	cfg *config.Config,
-	b bus.Bus,
-	store StoreAll,
-) *Mason {
-	scanstatus := ""
+func New(opts ...Option) *Mason {
+	o := applyOptionsToDefault(opts...)
 	m := &Mason{
-		bus:                b,
-		store:              store,
-		cfg:                cfg,
-		currentNetworkScan: &scanstatus,
+		cfg:                o.cfg,
+		currentNetworkScan: o.scanstatus,
+		bus:                o.bus,
+		store:              o.store,
+		flowstore:          o.nfstore,
 	}
+
+	if o.cfg.Oui.Enabled {
+		oui.Load(
+			oui.WithUrl(o.cfg.Oui.Url),
+			oui.WithDirectory(o.cfg.Oui.Directory),
+			oui.WithFilename(o.cfg.Oui.Filename),
+		)
+	}
+
+	if o.cfg.Asn.Enabled {
+		asn.Load(
+			asn.WithAsnUrl(o.cfg.Asn.AsnUrl),
+			asn.WithCountryUrl(o.cfg.Asn.CountryUrl),
+			asn.WithDirectory(o.cfg.Asn.Directory),
+			asn.WithCacheFilename(o.cfg.Asn.CacheFilename),
+			asn.WithStorer(o.nfstore),
+		)
+	}
+
 	return m
 }
 
-// NewTool returns a Mason instance meant for network tool usage (ping, traceroute, etc..) and not persisting data or operating as a server
-func NewTool() *Mason { return New(config.GetConfig(), nil, nil) }
-
 func (m *Mason) createWorkerPools(ctx context.Context) {
-	// Address scan setup
-	m.addressScanQ = make(chan netip.Addr)
-	m.addressScanWP = workerpool.New(
-		"discovery",
-		m.addressScanQ,
-		discovery.BuildAddrScannerFunc(discovery.BuildAddrScanners(m.cfg.Discovery)),
+	m.discoveryWorker = discovery.NewWorker(m.cfg.Discovery)
+	m.networkScannerWorker = discovery.NewNetworkScannerWorker(
+		m.currentNetworkScan,
+		m.discoveryWorker.In,
 	)
-
-	// Device enrichment setup
-	m.deviceEnrichQ = make(chan enrichment.EnrichDeviceRequest)
-	m.deviceEnrichWP = workerpool.New("enrichment", m.deviceEnrichQ, enrichment.EnrichDevice)
-
-	// Performance ping setup
-	m.perfPingQ = make(chan device.Device)
-	m.perfPingWP = workerpool.New(
-		"perfping",
-		m.perfPingQ,
-		pinger.BuildPingDevice(ctx, m.cfg.PerformancePinger),
-	)
-
-	// Network scan setup
-	m.networkScanQ = make(chan network.Network)
-	m.networkScanWP = workerpool.New(
-		"networkscan",
-		m.networkScanQ,
-		discovery.BuildNetworkScanFunc(m.addressScanQ, m.currentNetworkScan),
-	)
+	m.enrichmentWorker = enrichment.NewWorker()
+	m.pingerWorker = pinger.NewWorker(m.cfg.Pinger)
+	if m.cfg.NetFlows.Enabled {
+		if m.flowstore == nil {
+			log.Fatal("netflows enabled, but flowstore is nil")
+		}
+		input := netflows.Listen(ctx, m.cfg.NetFlows)
+		m.netflowsWorker = netflows.NewWorker(m.cfg.NetFlows, input)
+	}
 }
 
 func (m *Mason) shutdown() {
-	close(m.addressScanQ)
-	close(m.deviceEnrichQ)
-	close(m.perfPingQ)
-	close(m.networkScanQ)
+	m.enrichmentWorker.Close()
+	m.discoveryWorker.Close()
+	m.networkScannerWorker.Close()
+	m.pingerWorker.Close()
+	if m.netflowsWorker != nil {
+		m.netflowsWorker.Close()
+	}
+	m.store.Close()
+}
+
+func (m *Mason) publish(e bus.Event) {
+	m.busBackPressure.Add(1)
+	go func() {
+		m.bus.Publish(e)
+		m.busBackPressure.Add(-1)
+	}()
 }
 
 func (m *Mason) Run(ctx context.Context) {
@@ -182,24 +129,27 @@ func (m *Mason) Run(ctx context.Context) {
 	go m.bus.Run(ctx)
 
 	// Setup timers (tickers) for regularly scheduled actions
-	networkScanTrigger := time.NewTicker(*m.cfg.Discovery.CheckInterval)
-	performancePingTrigger := time.NewTicker(*m.cfg.PerformancePinger.CheckInterval)
-	snmpArpTableRescanTrigger := time.NewTicker(*m.cfg.Discovery.Snmp.ArpTableRescanInterval)
-	snmpInterfaceRescanTrigger := time.NewTicker(*m.cfg.Discovery.Snmp.InterfaceRescanInterval)
+	networkScanTrigger := time.NewTicker(m.cfg.Discovery.CheckInterval)
+	pingerTrigger := time.NewTicker(m.cfg.Pinger.CheckInterval)
+	snmpArpTableRescanTrigger := time.NewTicker(m.cfg.Discovery.Snmp.ArpTableRescanInterval)
+	snmpInterfaceRescanTrigger := time.NewTicker(m.cfg.Discovery.Snmp.InterfaceRescanInterval)
 	defer func() {
 		networkScanTrigger.Stop()
-		performancePingTrigger.Stop()
+		pingerTrigger.Stop()
 		snmpArpTableRescanTrigger.Stop()
 		snmpInterfaceRescanTrigger.Stop()
 	}()
 
 	// kick off the worker pools
-	go m.addressScanWP.Run(ctx, *m.cfg.Discovery.MaxWorkers)
-	go m.deviceEnrichWP.Run(ctx, *m.cfg.Enrichment.MaxWorkers)
-	go m.perfPingWP.Run(ctx, *m.cfg.PerformancePinger.MaxWorkers)
-	go m.networkScanWP.Run(ctx, *m.cfg.Discovery.MaxNetworkScanners)
+	go m.discoveryWorker.Run(ctx, m.cfg.Discovery.MaxWorkers)
+	go m.networkScannerWorker.Run(ctx)
+	go m.enrichmentWorker.Run(ctx, m.cfg.Enrichment.MaxWorkers)
+	go m.pingerWorker.Run(ctx, m.cfg.Pinger.MaxWorkers)
+	if m.cfg.NetFlows.Enabled {
+		go m.netflowsWorker.Run(ctx, m.cfg.NetFlows.MaxWorkers)
+	}
 
-	if m.store.CountNetworks() == 0 && *m.cfg.Discovery.BootstrapOnFirstRun {
+	if m.store.CountNetworks(ctx) == 0 && m.cfg.Discovery.BootstrapOnFirstRun {
 		go func() {
 			log.Debug("bootstraping mason")
 			m.bootstrapnetworks()
@@ -210,7 +160,7 @@ func (m *Mason) Run(ctx context.Context) {
 		select {
 
 		case <-ctx.Done():
-			log.Debug("mason shutdown begin")
+			log.Info("mason shutdown begin")
 			m.shutdown()
 			return
 
@@ -220,32 +170,32 @@ func (m *Mason) Run(ctx context.Context) {
 			//
 			//
 		case <-networkScanTrigger.C:
-			if *m.cfg.Discovery.Enabled {
-				go m.bus.Publish(network.ScanAllNetworksRequest{})
+			if m.cfg.Discovery.Enabled {
+				m.publish(model.ScanAllNetworksRequest{})
 			}
 
-		case <-performancePingTrigger.C:
-			if *m.cfg.PerformancePinger.Enabled {
-				go m.bus.Publish(pinger.PerfPingDevicesEvent{})
+		case <-pingerTrigger.C:
+			if m.cfg.Pinger.Enabled {
+				m.publish(pinger.PerfPingDevicesEvent{})
 			}
 
 		case <-snmpArpTableRescanTrigger.C:
 			go func() {
-				devs := m.store.GetFilteredDevices(
+				devs := m.store.GetFilteredDevices(ctx,
 					discovery.SnmpArpTableRescanFilter(m.cfg.Discovery.Snmp),
 				)
 				for _, dev := range devs {
-					m.bus.Publish(discovery.DiscoverDevicesFromSNMPDevice{Device: dev})
+					m.publish(discovery.DiscoverDevicesFromSNMPDevice{Device: dev})
 				}
 			}()
 
 		case <-snmpInterfaceRescanTrigger.C:
 			go func() {
-				devs := m.store.GetFilteredDevices(
+				devs := m.store.GetFilteredDevices(ctx,
 					discovery.SnmpArpTableRescanFilter(m.cfg.Discovery.Snmp),
 				)
 				for _, dev := range devs {
-					m.bus.Publish(discovery.DiscoverNetworksFromSNMPDevice{Device: dev})
+					m.publish(discovery.DiscoverNetworksFromSNMPDevice{Device: dev})
 				}
 			}()
 
@@ -256,64 +206,71 @@ func (m *Mason) Run(ctx context.Context) {
 		// - pool.E is any errors encountered while performing worker
 		//
 		//
-		case discoveredDevice := <-m.addressScanWP.C:
-			go m.bus.Publish(discoveredDevice)
+		case discoveredDevice := <-m.discoveryWorker.C:
+			m.publish(discoveredDevice)
 
-		case err := <-m.addressScanWP.E:
+		case err := <-m.discoveryWorker.E:
 			if !errors.Is(err, discovery.ErrNoDeviceDiscovered) {
 				// log.Errorf("address scan %T: %s", err, err)
-				go m.bus.Publish(err)
+				m.publish(tre.New(err, "discovery worker error"))
 			}
 
-		case enrichedDevice := <-m.deviceEnrichWP.C:
-			err := m.store.UpdateDevice(enrichedDevice)
+		case enrichedDevice := <-m.enrichmentWorker.C:
+			_, err := m.store.UpdateDevice(ctx, enrichedDevice)
 			if err != nil {
 				// log.Error("enrich, update device", "error", err)
-				go m.bus.Publish(err)
+				m.publish(tre.New(err, "enriched device store update", "addr", enrichedDevice.Addr))
 			}
 			if enrichedDevice.SNMP.Community != "" {
-				go func() {
-					m.bus.Publish(discovery.DiscoverDevicesFromSNMPDevice{Device: enrichedDevice})
-					m.bus.Publish(discovery.DiscoverNetworksFromSNMPDevice{Device: enrichedDevice})
-				}()
+				m.publish(discovery.DiscoverDevicesFromSNMPDevice{Device: enrichedDevice})
+				m.publish(discovery.DiscoverNetworksFromSNMPDevice{Device: enrichedDevice})
 			}
 
-		case err := <-m.deviceEnrichWP.E:
-			go func() {
-				// log.Error("enrich device", "error", err)
-				m.bus.Publish(err)
-			}()
+		case err := <-m.enrichmentWorker.E:
+			m.publish(tre.New(err, "enrichmentworker error"))
 
-		case <-m.networkScanWP.C:
+		case <-m.networkScannerWorker.C:
 		// nohting todo for networkscan output
 
-		case err := <-m.networkScanWP.E:
-			go func() {
-				// log.Error("network scan", "error", err)
-				m.bus.Publish(err)
-			}()
+		case err := <-m.networkScannerWorker.E:
+			m.publish(tre.New(err, "networkscanner worker error"))
 
-		case pingPerf := <-m.perfPingWP.C:
-			err := m.store.UpdateDevice(pingPerf.Device)
+		case pingPerf := <-m.pingerWorker.C:
+			_, err := m.store.UpdateDevice(ctx, pingPerf.Device)
 			if err != nil {
-				go m.bus.Publish(stackerr.New(err))
+				m.publish(tre.New(err, "update device to store", "addr", pingPerf.Device.Addr))
 			}
-			err = m.store.WriteTimeseriesPoint(
+			err = m.store.WritePerformancePing(
 				ctx,
 				pingPerf.Start,
 				pingPerf.Device,
-				pingPerf.Points()...,
+				pingPerf.Stats,
 			)
 			if err != nil {
-				go m.bus.Publish(stackerr.New(err))
+				m.publish(tre.New(err, "write pinger point", "addr", pingPerf.Device.Addr))
 			}
-			go m.bus.Publish(device.EventDeviceUpdated(pingPerf.Device))
+			m.publish(model.EventDeviceUpdated(pingPerf.Device))
 
-		case err := <-m.perfPingWP.E:
+		case err := <-m.pingerWorker.E:
+			m.publish(tre.New(err, "pinger worker error"))
+
+		case flows := <-m.netflowsWorker.C:
 			go func() {
-				// log.Error("perf ping", "error", err)
-				m.bus.Publish(err)
+				var err error
+				for idx, flow := range flows {
+					srcasn := m.LookupIP(flow.SrcAddr)
+					dstasn := m.LookupIP(flow.DstAddr)
+					flows[idx].SrcASN = srcasn
+					flows[idx].DstASN = dstasn
+				}
+				err = m.flowstore.AddNetflows(ctx, flows)
+				if err != nil {
+					m.publish(err)
+				}
 			}()
+
+		case err := <-m.netflowsWorker.E:
+			m.publish(tre.New(err, "netflows worker"))
 
 			//
 			//
@@ -329,48 +286,65 @@ func (m *Mason) Run(ctx context.Context) {
 			//  - they should run quick and anything should hold until they are done
 			//
 			//
-			case device.EventDeviceDiscovered:
+			case model.EventDeviceDiscovered:
 				// - try to add to ds
-				d := device.Device(event)
-				err := m.store.AddDevice(d)
+				d := model.Device(event)
+				err := m.store.AddDevice(ctx, d)
 				if err == nil {
 					// - if new emit new device event
-					go m.bus.Publish(device.EventDeviceAdded(event))
+					m.publish(model.EventDeviceAdded(event))
 					continue
 				}
-				if errors.Is(err, device.ErrDeviceExists) {
-					err = m.store.UpdateDevice(d)
+				if errors.Is(err, model.ErrDeviceExists) {
+					enrich, err := m.store.UpdateDevice(ctx, d)
 					if err == nil {
+						if enrich {
+							m.publish(
+								enrichment.EnrichDeviceRequest{
+									Device: model.Device(event),
+									Fields: enrichment.DefaultEnrichmentFields(m.cfg.Enrichment),
+								})
+						}
 						continue
 					}
 				}
-				go m.bus.Publish(stackerr.New(err))
+				m.publish(tre.New(err, "adding discovered device"))
 
-			case device.EventDeviceUpdated:
-				err := m.store.UpdateDevice(device.Device(event))
+			case model.EventDeviceUpdated:
+				enrich, err := m.store.UpdateDevice(ctx, model.Device(event))
 				if err != nil {
-					go m.bus.Publish(stackerr.New(err))
+					m.publish(tre.New(err, "storing updated device"))
 				}
-
-				// NewDeviceEvent is to spawn off further tasks
-				// keeping as an event (instead of just moving the code into DiscoveredDevice), so we can see history
-			case device.EventDeviceAdded:
-				if *m.cfg.Enrichment.Enabled {
-					go m.bus.Publish(
+				if enrich {
+					m.publish(
 						enrichment.EnrichDeviceRequest{
-							Device: device.Device(event),
+							Device: model.Device(event),
 							Fields: enrichment.DefaultEnrichmentFields(m.cfg.Enrichment),
 						})
 				}
 
-			case network.DiscoveredNetwork:
-				err := m.store.AddNetwork(network.Network(event))
-				if err != nil && !errors.Is(err, network.ErrNetworkExists) {
-					go m.bus.Publish(stackerr.New(err))
+				// NewDeviceEvent is to spawn off further tasks
+				// keeping as an event (instead of just moving the code into DiscoveredDevice), so we can see history
+			case model.EventDeviceAdded:
+				if m.cfg.Enrichment.Enabled {
+					m.publish(
+						enrichment.EnrichDeviceRequest{
+							Device: model.Device(event),
+							Fields: enrichment.DefaultEnrichmentFields(m.cfg.Enrichment),
+						})
 				}
-				go m.bus.Publish(network.NetworkAddedEvent(event))
-				if *m.cfg.Discovery.AutoDiscoverNewNetworks {
-					go m.bus.Publish(network.ScanNetworkRequest(event))
+
+			case model.DiscoveredNetwork:
+				err := m.store.AddNetwork(ctx, model.Network(event))
+				if err != nil {
+					if !errors.Is(err, model.ErrNetworkExists) {
+						m.publish(tre.New(err, "adding discovered network"))
+					}
+					continue
+				}
+				m.publish(model.NetworkAddedEvent(event))
+				if m.cfg.Discovery.AutoDiscoverNewNetworks {
+					m.publish(model.ScanNetworkRequest(event))
 				}
 
 				//
@@ -382,144 +356,185 @@ func (m *Mason) Run(ctx context.Context) {
 				//
 				//
 
-			case network.ScanNetworkRequest:
-				network := network.Network(event)
+			case model.ScanNetworkRequest:
+				network := model.Network(event)
 				network.LastScan = time.Now()
-				m.store.UpdateNetwork(network)
+				m.store.UpdateNetwork(ctx, network)
 				go func() {
-					m.networkScanQ <- network
+					select {
+					case <-ctx.Done():
+						return
+					case m.networkScannerWorker.In <- network:
+					}
 				}()
 
-			case network.ScanAllNetworksRequest:
+			case model.ScanAllNetworksRequest:
 				go func() {
 					// do a filter on the network list based on last scan time
-					networks := m.store.GetFilteredNetworks(discovery.NetworkRescanFilter(m.cfg.Discovery))
+					networks := m.store.GetFilteredNetworks(ctx, discovery.NetworkRescanFilter(m.cfg.Discovery))
 					for _, n := range networks {
-						go m.bus.Publish(network.ScanNetworkRequest(n))
+						m.publish(model.ScanNetworkRequest(n))
 					}
 				}()
 
 			// Ping all devices who need to be pinged again
 			case pinger.PerfPingDevicesEvent:
 				go func() {
-					devices := m.store.GetFilteredDevices(pinger.PerformancePingerFilter(m.cfg.PerformancePinger))
+					devices := m.store.GetFilteredDevices(ctx, pinger.PerformancePingerFilter(m.cfg.Pinger))
 					for _, device := range devices {
-						m.perfPingQ <- device
+						m.pingerWorker.In <- device
 					}
 				}()
 
 			case enrichment.EnrichDeviceRequest:
+				m.enrichBackPressure.Add(1)
 				go func() {
-					m.deviceEnrichQ <- event
+					select {
+					case <-ctx.Done():
+						return
+					case m.enrichmentWorker.In <- event:
+						m.enrichBackPressure.Add(-1)
+					}
 				}()
 
 			case enrichment.EnrichAllDevicesEvent:
-				if *m.cfg.Enrichment.Enabled {
+				if m.cfg.Enrichment.Enabled {
 					go func() {
-						devices := m.store.GetFilteredDevices(enrichment.PortScannerFilter(m.cfg.Enrichment.PortScanner))
+						devices := m.store.GetFilteredDevices(ctx, enrichment.PortScannerFilter(m.cfg.Enrichment.PortScan))
 						for _, d := range devices {
-							m.bus.Publish(enrichment.EnrichDeviceRequest{Device: d, Fields: enrichment.EnrichmentFields(event)})
-							time.Sleep(time.Second)
+							m.publish(enrichment.EnrichDeviceRequest{Device: d, Fields: enrichment.EnrichmentFields(event)})
 						}
 					}()
 				}
 
 			case discovery.DiscoverNetworksFromSNMPDevice:
-				go func() {
-					prefixes, err := nettools.SnmpGetInterfaces(ctx, event.Addr,
-						nettools.WithSnmpCommunity(event.SNMP.Community),
-						nettools.WithSnmpPort(event.SNMP.Port),
-						nettools.WithSnmpReplyTimeout(*m.cfg.Enrichment.SNMP.Timeout),
-					)
-					if err != nil {
-						if errors.Is(err, nettools.ErrConnectionRefused) || errors.Is(err, nettools.ErrNoResponseFromRemote) {
-							return
-						}
-						m.bus.Publish(stackerr.New(err))
-						return
-					}
-					for _, prefix := range prefixes {
-						err = m.AddNetworkByName(prefix.String(), prefix.String(), true)
-						if err != nil {
-							m.bus.Publish(stackerr.New(err))
-						}
-					}
-					event.SNMP.LastInterfacesScan = time.Now()
-					if len(prefixes) > 0 {
-						event.SNMP.HasInterfaces = true
-						event.SetUpdated()
-					}
-					m.bus.Publish(device.EventDeviceUpdated(event.Device))
-				}()
+				go discoverNetworksFromSnmp(ctx, event, m.cfg.Enrichment.Snmp.Timeout, m.publish, m.AddNetworkByName)
+
 			case discovery.DiscoverDevicesFromSNMPDevice:
-				go func() {
-					arps, err := nettools.SnmpGetArpTable(ctx, event.Addr,
-						nettools.WithSnmpCommunity(event.SNMP.Community),
-						nettools.WithSnmpPort(event.SNMP.Port),
-						nettools.WithSnmpReplyTimeout(*m.cfg.Enrichment.SNMP.Timeout),
-					)
-					if err != nil {
-						if errors.Is(err, nettools.ErrConnectionRefused) || errors.Is(err, nettools.ErrNoResponseFromRemote) {
-							return
-						}
-						m.bus.Publish(stackerr.New(err))
-						return
-					}
-					for _, arp := range arps {
-						m.bus.Publish(device.EventDeviceDiscovered{
-							Addr:         arp.Addr,
-							MAC:          arp.MAC,
-							DiscoveredBy: discovery.SNMPArpDiscoverySource,
-							DiscoveredAt: time.Now(),
-						})
-					}
-					event.SNMP.LastArpTableScan = time.Now()
-					if len(arps) > 0 {
-						event.SNMP.HasArpTable = true
-						event.SetUpdated()
-					}
-					m.bus.Publish(device.EventDeviceUpdated(event.Device))
-				}()
+				go discoverDevicesFromSnmp(ctx, event, m.cfg.Enrichment.Snmp.Timeout, m.publish)
 			}
 		}
 	}
 }
 
+func discoverNetworksFromSnmp(
+	ctx context.Context,
+	event discovery.DiscoverNetworksFromSNMPDevice,
+	timeout time.Duration,
+	publish func(bus.Event),
+	addNetworkByName func(context.Context, string, string, bool) error,
+) {
+	prefixes, err := nettools.SnmpGetInterfaces(ctx, event.Addr.Addr(),
+		nettools.WithSnmpCommunity(event.SNMP.Community),
+		nettools.WithSnmpPort(event.SNMP.Port),
+		nettools.WithSnmpReplyTimeout(timeout),
+	)
+	if err != nil {
+		if errors.Is(err, nettools.ErrConnectionRefused) ||
+			errors.Is(err, nettools.ErrNoResponseFromRemote) {
+			return
+		}
+		publish(tre.New(err, "snmp get interfaces", "addr", event.Addr))
+		return
+	}
+	for _, prefix := range prefixes {
+		err = addNetworkByName(ctx, prefix.String(), prefix.String(), true)
+		if err != nil {
+			publish(
+				tre.New(
+					err,
+					"adding snmp discovered network",
+					"addr",
+					event.Addr,
+					"network",
+					prefix.String(),
+				),
+			)
+		}
+	}
+	event.Device.SNMP.LastInterfacesScan = time.Now()
+	if len(prefixes) > 0 {
+		event.Device.SNMP.HasInterfaces = true
+		event.Device.SetUpdated()
+	}
+	publish(model.EventDeviceUpdated(event.Device))
+}
+
+func discoverDevicesFromSnmp(
+	ctx context.Context,
+	event discovery.DiscoverDevicesFromSNMPDevice,
+	timeout time.Duration,
+	publish func(bus.Event),
+) {
+	arps, err := nettools.SnmpGetArpTable(ctx, event.Addr.Addr(),
+		nettools.WithSnmpCommunity(event.SNMP.Community),
+		nettools.WithSnmpPort(event.SNMP.Port),
+		nettools.WithSnmpReplyTimeout(timeout),
+	)
+	if err != nil {
+		if errors.Is(err, nettools.ErrConnectionRefused) ||
+			errors.Is(err, nettools.ErrNoResponseFromRemote) {
+			return
+		}
+		publish(tre.New(err, "snmp get arp table", "addr", event.Addr))
+		return
+	}
+	for _, arp := range arps {
+		publish(model.EventDeviceDiscovered{
+			Addr:         model.AddrToModelAddr(arp.Addr),
+			MAC:          model.HardwareAddrToMAC(arp.MAC),
+			DiscoveredBy: discovery.SNMPArpDiscoverySource,
+			DiscoveredAt: time.Now(),
+		})
+	}
+	event.Device.SNMP.LastArpTableScan = time.Now()
+	if len(arps) > 0 {
+		event.Device.SNMP.HasArpTable = true
+		event.Device.SetUpdated()
+	}
+	publish(model.EventDeviceUpdated(event.Device))
+}
+
 // AddNetwork is a helper function to introduce a new network into the system
-func (m *Mason) AddNetworkByName(name string, prefix string, scannow bool) error {
-	newnet, err := network.New(name, prefix)
+func (m *Mason) AddNetworkByName(
+	ctx context.Context,
+	name string,
+	prefix string,
+	scannow bool,
+) error {
+	newnet, err := model.New(name, prefix)
 	if err != nil {
 		return err
 	}
-	m.bus.Publish(network.DiscoveredNetwork(newnet))
+	m.publish(model.DiscoveredNetwork(newnet))
 	return nil
 }
 
 func (m *Mason) bootstrapnetworks() {
+	ctx := context.Background()
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		// log.Error("bootstrap interfaces fetch", "error", err)
-		m.bus.Publish(err)
+		m.publish(err)
 		return
 	}
 	log.Info("mason bootstrap from network interfaces", "ifcount", len(ifaces))
 	for _, iface := range ifaces {
-		if !network.IsUsefulInterface(iface) {
+		if !model.IsUsefulInterface(iface) {
 			continue
 		}
 
 		addrs, err := iface.Addrs()
 		if err != nil {
-			// log.Error("bootstrap interface addresses fetch", "error", err)
-			m.bus.Publish(err)
+			m.publish(err)
 			continue
 		}
 
 		for _, addr := range addrs {
 			ns := addr.String()
-			err = m.AddNetworkByName(ns, ns, *m.cfg.Discovery.Enabled)
+			err = m.AddNetworkByName(ctx, ns, ns, m.cfg.Discovery.Enabled)
 			if err != nil {
-				m.bus.Publish(err)
+				m.publish(err)
 			}
 		}
 	}
@@ -528,83 +543,86 @@ func (m *Mason) bootstrapnetworks() {
 
 func (m *Mason) recordIfError(err error) {
 	if err != nil && m.bus != nil {
-		m.bus.Publish(err)
+		m.publish(err)
 	}
 }
 
-func (m *Mason) ListNetworks() []network.Network {
-	return m.store.ListNetworks()
+func (m *Mason) ListNetworks(ctx context.Context) []model.Network {
+	return m.store.ListNetworks(ctx)
 }
 
-func (m *Mason) CountNetworks() int {
-	return m.store.CountNetworks()
+func (m *Mason) CountNetworks(ctx context.Context) int {
+	return m.store.CountNetworks(ctx)
 }
 
-func (m *Mason) AddNetwork(network network.Network) error {
-	err := m.store.AddNetwork(network)
+func (m *Mason) AddNetwork(ctx context.Context, network model.Network) error {
+	err := m.store.AddNetwork(ctx, network)
 	m.recordIfError(err)
 	return err
 }
 
-func (m *Mason) ListDevices() []device.Device {
-	return m.store.ListDevices()
+func (m *Mason) ListDevices(ctx context.Context) []model.Device {
+	return m.store.ListDevices(ctx)
 }
 
-func (m *Mason) CountDevices() int {
-	return m.store.CountDevices()
+func (m *Mason) CountDevices(ctx context.Context) int {
+	return m.store.CountDevices(ctx)
 }
 
-func (m *Mason) GetDeviceByAddr(addr netip.Addr) (device.Device, error) {
-	d, err := m.store.GetDeviceByAddr(addr)
+func (m *Mason) GetDeviceByAddr(ctx context.Context, addr model.Addr) (model.Device, error) {
+	d, err := m.store.GetDeviceByAddr(ctx, addr)
 	m.recordIfError(err)
 	return d, err
 }
 
-func (m *Mason) ReadTimeseriesPoints(
+func (m *Mason) ReadPerformancePings(
 	ctx context.Context,
-	device device.Device,
+	device model.Device,
 	duration time.Duration,
-	hydrator pinger.TimeseriesPoint,
-) ([]pinger.TimeseriesPoint, error) {
-	points, err := m.store.ReadTimeseriesPoints(ctx, device, duration, hydrator)
+) ([]pinger.Point, error) {
+	points, err := m.store.ReadPerformancePings(ctx, device, duration)
 	m.recordIfError(err)
 	return points, err
 }
 
-func (m Mason) GetConfig() config.Config {
-	return *m.cfg
+func (m *Mason) GetConfig() *Config {
+	return m.cfg
 }
 
-func (m Mason) StringToAddr(str string) (netip.Addr, error) {
-	addr, err := netip.ParseAddr(str)
+func (m *Mason) StringToAddr(str string) (model.Addr, error) {
+	addr, err := model.ParseAddr(str)
 	if err != nil {
 		m.recordIfError(err)
 	}
 	return addr, err
 }
 
-func (m Mason) IcmpPingAddr(
+func (m *Mason) IcmpPingAddr(
 	ctx context.Context,
-	addr netip.Addr,
+	addr model.Addr,
 	count int,
 	timeout time.Duration,
+	priviledged bool,
 ) (nettools.Icmp4EchoResponseStatistics, error) {
 	responses, err := nettools.Icmp4Echo(
 		ctx,
-		addr,
+		addr.Addr(),
 		nettools.I4EWithCount(count),
 		nettools.I4EWithReadTimeout(timeout),
+		nettools.I4EWithPrivileged(priviledged),
+		nettools.I4EWithTTL(3),
 	)
 	m.recordIfError(err)
 	stats := nettools.CalculateIcmp4EchoResponseStatistics(responses)
 	return stats, err
 }
 
-func (m Mason) IcmpPing(
+func (m *Mason) IcmpPing(
 	ctx context.Context,
 	target string,
 	count int,
 	timeout time.Duration,
+	priviledged bool,
 ) (stats nettools.Icmp4EchoResponseStatistics, err error) {
 	addr, err := m.StringToAddr(target)
 	if err != nil {
@@ -615,53 +633,54 @@ func (m Mason) IcmpPing(
 		addr,
 		count,
 		timeout,
+		priviledged,
 	)
 	return stats, err
 }
 
-func (m Mason) ArpPing(
+func (m *Mason) ArpPing(
 	ctx context.Context,
 	target string,
 	timeout time.Duration,
-) (net.HardwareAddr, error) {
+) (model.MAC, error) {
 	addr, err := m.StringToAddr(target)
 	if err != nil {
-		return nil, err
+		return model.MAC{}, err
 	}
 	entry, err := nettools.FindHardwareAddrOf(
 		ctx,
-		addr,
+		addr.Addr(),
 		nettools.WithArpReplyTimeout(timeout),
 	)
 	m.recordIfError(err)
-	return entry.MAC, err
+	return model.HardwareAddrToMAC(entry.MAC), err
 }
 
-func (m Mason) Portscan(
+func (m *Mason) Portscan(
 	ctx context.Context,
 	target string,
-	cfg *config.PortScannerConfig,
+	cfg *enrichment.PortScanConfig,
 ) ([]int, error) {
 	addr, err := m.StringToAddr(target)
 	if err != nil {
 		return nil, err
 	}
-	ports, err := nettools.ScanTcpPorts(ctx, addr,
-		nettools.WithPortscanReplyTimeout(*cfg.PortTimeout),
-		nettools.WithPortscanPortlistName(*cfg.PortList),
-		nettools.WithPortscanMaxworkers(*cfg.MaxWorkers),
+	ports, err := nettools.ScanTcpPorts(ctx, addr.Addr(),
+		nettools.WithPortscanReplyTimeout(cfg.Timeout),
+		nettools.WithPortscanPortlistName(cfg.PortList),
+		nettools.WithPortscanMaxworkers(cfg.MaxWorkers),
 	)
 	m.recordIfError(err)
 	return ports, err
 }
 
-func (m Mason) GetExternalAddr(ctx context.Context) (netip.Addr, error) {
+func (m *Mason) GetExternalAddr(ctx context.Context) (model.Addr, error) {
 	addr, err := nettools.GetExternalAddr(ctx)
 	m.recordIfError(err)
-	return addr, err
+	return model.AddrToModelAddr(addr), err
 }
 
-func (m Mason) Traceroute(
+func (m *Mason) Traceroute(
 	ctx context.Context,
 	target string,
 ) (stat []nettools.Icmp4EchoResponseStatistics, err error) {
@@ -672,11 +691,18 @@ func (m Mason) Traceroute(
 	return m.TracerouteAddr(ctx, addr)
 }
 
-func (m Mason) TracerouteAddr(
+func (m *Mason) TracerouteAddr(
 	ctx context.Context,
-	target netip.Addr,
+	target model.Addr,
 ) (stats []nettools.Icmp4EchoResponseStatistics, err error) {
-	respOfResp, err := nettools.Traceroute4(ctx, target)
+	if !m.cfg.Discovery.Icmp.Privileged {
+		return nil, errors.New("cannot execute traceroute in unpriviledged mode")
+	}
+	respOfResp, err := nettools.Traceroute4(
+		ctx,
+		target.Addr(),
+		nettools.I4EWithPrivileged(m.cfg.Discovery.Icmp.Privileged),
+	)
 	if err != nil {
 		m.recordIfError(err)
 		return stats, err
@@ -686,46 +712,65 @@ func (m Mason) TracerouteAddr(
 		stats = append(stats,
 			nettools.CalculateIcmp4EchoResponseStatistics(resp))
 	}
+
+	if m.cfg.Asn.Enabled {
+		for idx, stat := range stats {
+			if !stat.Peer.IsValid() {
+				continue
+			}
+			asn := m.LookupIP(model.AddrToModelAddr(stat.Peer))
+			if asn == "" {
+				continue
+			}
+
+			asninfo, err := m.GetAsn(ctx, asn)
+			if err != nil {
+				m.recordIfError(err)
+				return stats, err
+			}
+			stats[idx].Asn = asninfo.Asn
+			stats[idx].OrgName = asninfo.Name
+		}
+	}
 	return stats, err
 }
 
-func (m Mason) FetchTLSInfo(ctx context.Context, target string) (nettools.TLS, error) {
+func (m *Mason) FetchTLSInfo(ctx context.Context, target string) (nettools.TLS, error) {
 	return nettools.FetchTLS(target)
 }
 
-func (m Mason) FetchSNMPInfo(
+func (m *Mason) FetchSNMPInfo(
 	ctx context.Context,
 	target string,
 ) (info nettools.SnmpInfo, err error) {
 	addr, err := m.StringToAddr(target)
 	if err != nil {
+		m.recordIfError(err)
 		return info, err
 	}
 	return m.FetchSNMPInfoAddr(ctx, addr)
 }
 
-func (m Mason) FetchSNMPInfoAddr(
+func (m *Mason) FetchSNMPInfoAddr(
 	ctx context.Context,
-	target netip.Addr,
+	target model.Addr,
 ) (info nettools.SnmpInfo, err error) {
-	return nettools.FetchSNMPInfo(ctx, target)
+	return nettools.FetchSNMPInfo(ctx, target.Addr())
 }
 
-func (m Mason) CheckDNS(
+func (m *Mason) CheckDNS(
 	ctx context.Context,
 	target string,
 ) (map[string]map[string][]netip.Addr, error) {
 	return nettools.DNSCheckAllServers(ctx, target)
 }
 
-func (m Mason) GetUserAgent() string {
+func (m *Mason) GetUserAgent() string {
 	return nettools.GetUserAgent()
 }
 
-func (m Mason) OuiLookup(mac net.HardwareAddr) (string, error) {
-	x, err := nettools.OuiLookup(mac)
-	m.recordIfError(err)
-	return x, err
+func (m *Mason) OuiLookup(mac net.HardwareAddr) string {
+	return oui.Lookup(mac)
 }
 
 type MasonInternalsView struct {
@@ -734,16 +779,18 @@ type MasonInternalsView struct {
 	NetworkStoreCount int
 	DeviceStoreCount  int
 
-	NetworkScanMaxWorkers int
-	DiscoveryMaxWorkers   int
-	EnrichmentMaxWorkers  int
-	PortScanMaxWorkers    int
-	PingerMaxWorkers      int
+	DiscoveryMaxWorkers    int
+	EnrichmentMaxWorkers   int
+	EnrichmentBackPressure int
+	PortScanMaxWorkers     int
+	PingerMaxWorkers       int
 
 	AddressScanActive  int
 	DeviceEnrichActive int
 	PerfPingActive     int
 	NetworkScanActive  int
+
+	BusBackPressure int
 
 	CurrentNetworkScan string
 	Events             []bus.HistoricalEvent
@@ -753,25 +800,27 @@ type MasonInternalsView struct {
 	Buildinfo debug.BuildInfo
 }
 
-func (m *Mason) GetInternalsSnapshot() MasonInternalsView {
+func (m *Mason) GetInternalsSnapshot(ctx context.Context) MasonInternalsView {
 	iv := MasonInternalsView{}
 
 	iv.NumberOfGoProcs = runtime.NumGoroutine()
 
-	iv.NetworkStoreCount = m.store.CountNetworks()
-	iv.DeviceStoreCount = m.store.CountDevices()
+	iv.NetworkStoreCount = m.store.CountNetworks(ctx)
+	iv.DeviceStoreCount = m.store.CountDevices(ctx)
 
-	iv.NetworkScanMaxWorkers = *m.cfg.Discovery.MaxNetworkScanners
-	iv.DiscoveryMaxWorkers = *m.cfg.Discovery.MaxWorkers
-	iv.PingerMaxWorkers = *m.cfg.PerformancePinger.MaxWorkers
-	iv.EnrichmentMaxWorkers = *m.cfg.Enrichment.MaxWorkers
-	iv.PortScanMaxWorkers = *m.cfg.Enrichment.PortScanner.MaxWorkers
+	iv.DiscoveryMaxWorkers = m.cfg.Discovery.MaxWorkers
+	iv.PingerMaxWorkers = m.cfg.Pinger.MaxWorkers
+	iv.EnrichmentMaxWorkers = m.cfg.Enrichment.MaxWorkers
+	iv.EnrichmentBackPressure = int(m.enrichBackPressure.Load())
+	iv.PortScanMaxWorkers = m.cfg.Enrichment.PortScan.MaxWorkers
 	iv.CurrentNetworkScan = *m.currentNetworkScan
 
-	iv.AddressScanActive = m.addressScanWP.Active()
-	iv.DeviceEnrichActive = m.deviceEnrichWP.Active()
-	iv.PerfPingActive = m.perfPingWP.Active()
-	iv.NetworkScanActive = m.networkScanWP.Active()
+	iv.AddressScanActive = m.discoveryWorker.Active()
+	iv.DeviceEnrichActive = m.enrichmentWorker.Active()
+	iv.PerfPingActive = m.pingerWorker.Active()
+	iv.NetworkScanActive = m.networkScannerWorker.Active()
+
+	iv.BusBackPressure = int(m.busBackPressure.Load())
 
 	iv.Events = m.bus.History()
 	slices.Reverse(iv.Events)
@@ -787,13 +836,13 @@ func (m *Mason) GetInternalsSnapshot() MasonInternalsView {
 	return iv
 }
 
-func (m Mason) GetNetworkStats() []network.NetworkStats {
-	return buildNetworkStats(m.store.ListNetworks(), m.store.ListDevices())
+func (m *Mason) GetNetworkStats(ctx context.Context) []model.NetworkStats {
+	return buildNetworkStats(m.store.ListNetworks(ctx), m.store.ListDevices(ctx))
 }
 
-func (m Mason) PingFailures() []device.Device {
-	pf := make([]device.Device, 0)
-	for _, d := range m.ListDevices() {
+func (m *Mason) PingFailures(ctx context.Context) []model.Device {
+	pf := make([]model.Device, 0)
+	for _, d := range m.ListDevices(ctx) {
 		if d.PerformancePing.LastFailed {
 			pf = append(pf, d)
 		}
@@ -801,9 +850,9 @@ func (m Mason) PingFailures() []device.Device {
 	return pf
 }
 
-func (m Mason) ServerDevices() []device.Device {
-	sd := make([]device.Device, 0)
-	for _, d := range m.ListDevices() {
+func (m *Mason) ServerDevices(ctx context.Context) []model.Device {
+	sd := make([]model.Device, 0)
+	for _, d := range m.ListDevices(ctx) {
 		if d.IsServer() {
 			sd = append(sd, d)
 		}
@@ -811,16 +860,37 @@ func (m Mason) ServerDevices() []device.Device {
 	return sd
 }
 
+func (m *Mason) FlowSummaryByIP(
+	ctx context.Context,
+	addr model.Addr,
+) ([]model.FlowSummaryForAddrByIP, error) {
+	return m.flowstore.FlowSummaryByIP(ctx, addr)
+}
+
+func (m *Mason) FlowSummaryByName(
+	ctx context.Context,
+	addr model.Addr,
+) ([]model.FlowSummaryForAddrByName, error) {
+	return m.flowstore.FlowSummaryByName(ctx, addr)
+}
+
+func (m *Mason) FlowSummaryByCountry(
+	ctx context.Context,
+	addr model.Addr,
+) ([]model.FlowSummaryForAddrByCountry, error) {
+	return m.flowstore.FlowSummaryByCountry(ctx, addr)
+}
+
 func buildNetworkStats(
-	networks []network.Network,
-	devices []device.Device,
-) (nss []network.NetworkStats) {
-	nss = make([]network.NetworkStats, 0, len(networks))
+	networks []model.Network,
+	devices []model.Device,
+) (nss []model.NetworkStats) {
+	nss = make([]model.NetworkStats, 0, len(networks))
 	for _, nw := range networks {
-		ns := network.NetworkStats{}
+		ns := model.NetworkStats{}
 		ns.Network = nw
 		ns.IPTotal = math.Pow(float64(2), float64(32-nw.Prefix.Bits()))
-		if nw.Prefix.Addr().Is6() {
+		if nw.Prefix.Is6() {
 			ns.IPTotal = math.Pow(float64(2), float64(128-nw.Prefix.Bits()))
 		}
 		var totalavg, totalmax time.Duration
@@ -842,4 +912,13 @@ func buildNetworkStats(
 		nss = append(nss, ns)
 	}
 	return nss
+}
+
+func (m *Mason) LookupIP(addr model.Addr) string {
+	// TODO: check if asn is enabled in config
+	return asn.FindAsn(addr.Addr())
+}
+
+func (m *Mason) GetAsn(ctx context.Context, asn string) (model.Asn, error) {
+	return m.flowstore.GetAsn(ctx, asn)
 }

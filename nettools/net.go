@@ -6,7 +6,6 @@ package nettools
 
 import (
 	"crypto/tls"
-	"embed"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,9 +18,6 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/net/ipv4"
 )
-
-//go:embed oui
-var ouifile embed.FS
 
 var _ Nettooler = (*pkg)(nil)
 

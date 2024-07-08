@@ -5,45 +5,47 @@
 package wui
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	g "github.com/maragudk/gomponents"
 	h "github.com/maragudk/gomponents/html"
 
-	"github.com/networkables/mason/internal/network"
+	"github.com/networkables/mason/internal/model"
 )
 
 func (w WUI) wuiHomePageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.Class("drawer-content"),
-		w.dashboardContent(),
+		w.dashboardContent(ctx),
 	)
-	w.basePage("dashboard", content, nil).Render(wr)
+	w.basePage(ctx, "dashboard", content, nil).Render(wr)
 }
 
-func (w WUI) dashboardContent() g.Node {
+func (w WUI) dashboardContent(ctx context.Context) g.Node {
 	return grid(
 		"",
-		wuiStatBox("devices", strconv.Itoa(w.m.CountDevices()), ""),
+		wuiStatBox("devices", strconv.Itoa(w.m.CountDevices(ctx)), ""),
 		wuiStatBox(
 			"networks",
-			strconv.Itoa(w.m.CountNetworks()),
+			strconv.Itoa(w.m.CountNetworks(ctx)),
 			"ipv4 + ipv6",
 		),
 		wuiStatBox(
 			"ping failures",
-			strconv.Itoa(len(w.m.PingFailures())),
+			strconv.Itoa(len(w.m.PingFailures(ctx))),
 			"",
 		),
 		wuiStatBox(
 			"servers",
-			strconv.Itoa(len(w.m.ServerDevices())),
+			strconv.Itoa(len(w.m.ServerDevices(ctx))),
 			"devices with listening ports",
 		),
 		g.Group(
 			g.Map(
-				w.m.GetNetworkStats(), func(ns network.NetworkStats) g.Node {
+				w.m.GetNetworkStats(ctx), func(ns model.NetworkStats) g.Node {
 					return netStatBox(
 						ns.Name,
 						ns.Prefix,

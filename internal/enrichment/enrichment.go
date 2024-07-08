@@ -10,23 +10,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/networkables/mason/internal/config"
-	"github.com/networkables/mason/internal/device"
-	"github.com/networkables/mason/internal/stackerr"
-	"github.com/networkables/mason/internal/tags"
+	"github.com/emicklei/tre"
+
+	"github.com/networkables/mason/internal/model"
+	"github.com/networkables/mason/internal/oui"
 	"github.com/networkables/mason/nettools"
 )
 
-func PortScannerFilter(cfg *config.PortScannerConfig) device.DeviceFilter {
-	return func(d device.Device) bool {
+func PortScannerFilter(cfg *PortScanConfig) model.DeviceFilter {
+	return func(d model.Device) bool {
 		since := time.Since(d.Server.LastScan)
 		if d.IsServer() {
-			if since > *cfg.ServerInterval {
+			if since > cfg.ServerScanInterval {
 				return true
 			}
 			return false
 		}
-		if since > *cfg.DefaultInterval {
+		if since > cfg.DefaultScanInterval {
 			return true
 		}
 		return false
@@ -39,7 +39,7 @@ type EnrichmentFields struct {
 	PerformOUILookup bool
 	PerformPortScan  bool
 	PerformSNMPScan  bool
-	Cfg              *config.Enrichment
+	Cfg              *Config
 }
 
 func (e EnrichmentFields) String() string {
@@ -54,17 +54,17 @@ func (e EnrichmentFields) String() string {
 		str += "SNMP "
 	}
 	if e.PerformPortScan {
-		str += "PortScan:" + *e.Cfg.PortScanner.PortList + " "
+		str += "PortScan:" + e.Cfg.PortScan.PortList + " "
 	}
 	return str
 }
 
-func DefaultEnrichmentFields(cfg *config.Enrichment) EnrichmentFields {
+func DefaultEnrichmentFields(cfg *Config) EnrichmentFields {
 	return EnrichmentFields{
-		PerformDNSLookup: *cfg.DnsLookup.Enabled,
-		PerformOUILookup: *cfg.OuiLookup.Enabled,
-		PerformPortScan:  *cfg.PortScanner.Enabled,
-		PerformSNMPScan:  *cfg.SNMP.Enabled,
+		PerformDNSLookup: cfg.Dns.Enabled,
+		PerformOUILookup: cfg.Oui.Enabled,
+		PerformPortScan:  cfg.PortScan.Enabled,
+		PerformSNMPScan:  cfg.Snmp.Enabled,
 		Cfg:              cfg,
 	}
 }
@@ -73,7 +73,7 @@ type EnrichAllDevicesEvent EnrichmentFields
 
 type EnrichDeviceRequest struct {
 	Fields EnrichmentFields
-	Device device.Device
+	Device model.Device
 }
 
 func (e EnrichDeviceRequest) String() string {
@@ -85,16 +85,14 @@ func (e EnrichDeviceRequest) String() string {
 }
 
 func (e EnrichAllDevicesEvent) String() string {
-	return fmt.Sprintf("ScanAllDevices %s", EnrichmentFields(e).String())
+	return fmt.Sprintf("EnrichAllDevices %s", EnrichmentFields(e).String())
 }
 
-func EnrichDevice(d EnrichDeviceRequest) (device.Device, error) {
-	ctx := context.TODO()
+func EnrichDevice(ctx context.Context, d EnrichDeviceRequest) (model.Device, error) {
 	if d.Fields.PerformDNSLookup && d.Device.Meta.DnsName == "" {
-		name, err := nettools.FindHostnameOf(d.Device.Addr)
+		name, err := nettools.FindHostnameOf(d.Device.Addr.Addr())
 		if err != nil && !errors.Is(err, nettools.ErrNoDnsNames) {
-			// log.Error("dnsReverseLookup problem", "error", err)
-			return d.Device, stackerr.New(err)
+			return d.Device, tre.New(err, "reverse lookup", "addr", d.Device.Addr)
 		}
 		if name != "" {
 			d.Device.Meta.DnsName = name
@@ -102,30 +100,29 @@ func EnrichDevice(d EnrichDeviceRequest) (device.Device, error) {
 		}
 	}
 	if d.Fields.PerformOUILookup && d.Device.Meta.Manufacturer == "" {
-		manu, err := nettools.OuiLookup(d.Device.MAC)
-		switch {
-		case err == nil:
-			d.Device.Meta.Manufacturer = manu
-			d.Device.Meta.Tags = tags.Remove(tags.RandomizedMacAddressTag, d.Device.Meta.Tags)
-			d.Device.SetUpdated()
-		case errors.Is(err, nettools.ErrRandomizedMacAddress):
-			d.Device.Meta.Tags = tags.Add(tags.RandomizedMacAddressTag, d.Device.Meta.Tags)
+		if nettools.IsRandomMac(d.Device.MAC.Addr()) {
+			d.Device.Meta.Tags = model.Add(model.RandomizedMacAddressTag, d.Device.Meta.Tags)
 			d.Device.Meta.Manufacturer = "<randomized mac>"
 			d.Device.SetUpdated()
-		default:
-			return d.Device, stackerr.New(err)
+		} else {
+			manu := oui.Lookup(d.Device.MAC.Addr())
+			if manu != "" {
+				d.Device.Meta.Manufacturer = manu
+				d.Device.Meta.Tags = model.Remove(model.RandomizedMacAddressTag, d.Device.Meta.Tags)
+				d.Device.SetUpdated()
+			}
 		}
 	}
 	if d.Fields.PerformPortScan {
-		openports, err := nettools.ScanTcpPorts(ctx, d.Device.Addr,
-			nettools.WithPortscanReplyTimeout(*d.Fields.Cfg.PortScanner.PortTimeout),
-			nettools.WithPortscanPortlistName(*d.Fields.Cfg.PortScanner.PortList),
-			nettools.WithPortscanMaxworkers(*d.Fields.Cfg.PortScanner.MaxWorkers),
+		openports, err := nettools.ScanTcpPorts(ctx, d.Device.Addr.Addr(),
+			nettools.WithPortscanReplyTimeout(d.Fields.Cfg.PortScan.Timeout),
+			nettools.WithPortscanPortlistName(d.Fields.Cfg.PortScan.PortList),
+			nettools.WithPortscanMaxworkers(d.Fields.Cfg.PortScan.MaxWorkers),
 		)
 		if err != nil {
-			return d.Device, stackerr.New(err)
+			return d.Device, tre.New(err, "port scan", "addr", d.Device.Addr)
 		}
-		d.Device.Server.Ports = openports
+		d.Device.Server.Ports = model.IntSliceToPortList(openports)
 		d.Device.Server.LastScan = time.Now()
 		d.Device.SetUpdated()
 	}
@@ -137,15 +134,15 @@ func EnrichDevice(d EnrichDeviceRequest) (device.Device, error) {
 		)
 		d.Device.SNMP.LastSNMPCheck = time.Now()
 		d.Device.SetUpdated()
-		for _, community := range d.Fields.Cfg.SNMP.Community {
-			for _, port := range d.Fields.Cfg.SNMP.Ports {
+		for _, community := range d.Fields.Cfg.Snmp.Community {
+			for _, port := range d.Fields.Cfg.Snmp.Ports {
 				if snmpworks {
 					continue // we have a good set of credentials, skip the other tests
 				}
-				_, err := nettools.SnmpGetSystemInfo(ctx, d.Device.Addr,
+				_, err := nettools.SnmpGetSystemInfo(ctx, d.Device.Addr.Addr(),
 					nettools.WithSnmpCommunity(community),
 					nettools.WithSnmpPort(port),
-					nettools.WithSnmpReplyTimeout(*d.Fields.Cfg.SNMP.Timeout))
+					nettools.WithSnmpReplyTimeout(d.Fields.Cfg.Snmp.Timeout))
 				if err != nil {
 					if errors.Is(err, nettools.ErrConnectionRefused) ||
 						errors.Is(err, nettools.ErrNoResponseFromRemote) {
@@ -164,12 +161,12 @@ func EnrichDevice(d EnrichDeviceRequest) (device.Device, error) {
 			d.Device.SNMP.Port = goodport
 			ssi, err := nettools.SnmpGetSystemInfo(
 				ctx,
-				d.Device.Addr,
+				d.Device.Addr.Addr(),
 				nettools.WithSnmpCommunity(goodcommunity),
 				nettools.WithSnmpPort(goodport),
-				nettools.WithSnmpReplyTimeout(*d.Fields.Cfg.SNMP.Timeout))
+				nettools.WithSnmpReplyTimeout(d.Fields.Cfg.Snmp.Timeout))
 			if err != nil {
-				return d.Device, stackerr.New(err)
+				return d.Device, tre.New(err, "snmp check", "addr", d.Device.Addr)
 			}
 			d.Device.SNMP.Name = ssi.Name
 			d.Device.SNMP.Description = ssi.Description
