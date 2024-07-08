@@ -4,7 +4,7 @@ version: 1
 # (Optional) List of env variables used during compilation.
 env:
   - GO111MODULE=on
-  - CGO_ENABLED=0
+  - CGO_ENABLED=1
 
 # (Optional) Flags for the compiler.
 flags:
@@ -35,5 +35,6 @@ ldflags:
   - "-X main.Commit={{ .Env.COMMIT }}"
   - "-X main.CommitDate={{ .Env.COMMIT_DATE }}"
   - "-X main.TreeState={{ .Env.TREE_STATE }}"
-  #  - "-s"
-  #  - "-w"
+  - "-s"
+  - "-w"
+  - "-extldflags \"-static\""
