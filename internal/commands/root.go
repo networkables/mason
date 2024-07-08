@@ -5,13 +5,25 @@
 package commands
 
 import (
+	"errors"
 	"runtime/debug"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 
-	"github.com/networkables/mason/internal/config"
+	"github.com/networkables/mason/internal/asn"
+	"github.com/networkables/mason/internal/bus"
+	"github.com/networkables/mason/internal/combostore"
+	"github.com/networkables/mason/internal/discovery"
+	"github.com/networkables/mason/internal/enrichment"
+	"github.com/networkables/mason/internal/netflows"
+	"github.com/networkables/mason/internal/oui"
+	"github.com/networkables/mason/internal/pinger"
 	"github.com/networkables/mason/internal/server"
+	"github.com/networkables/mason/internal/sqlitestore"
 )
 
 var (
@@ -39,7 +51,7 @@ var (
 			if ok {
 				version = bi.Main.Version
 			}
-			m := server.NewTool()
+			m := server.New()
 			log.Print("mason", "version", version, "useragent", m.GetUserAgent())
 			return nil
 		},
@@ -57,15 +69,10 @@ func init() {
 
 	cmdRoot.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Activate debug logging")
 
-	cfg := config.GetConfig()
-	config.CfgDiscoBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.Discovery)
-	config.CfgStoreBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.Store)
-	config.CfgBusBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.Bus)
-	config.CfgServerBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.Server)
-	config.CfgPerfPingeBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.PerformancePinger)
-	config.CfgEnrichBuildAndBindFlags(cmdRoot.PersistentFlags(), cfg.Enrichment)
+	// TODO: set all flags is probably only useful for server commands, should get rid of this and only apply flags needed at the command level (or sub command)
+	setAllFlags(cmdRoot.PersistentFlags(), server.GetConfig())
 
-	// viper.WriteConfigAs("test.yaml")
+	// viper.WriteConfigAs("config.yaml")
 
 	// log.Info(
 	// 	"disco enable",
@@ -79,4 +86,38 @@ func init() {
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
+}
+
+func setAllFlags(f *pflag.FlagSet, c *server.Config) {
+	// Sane defaults
+	server.SetFlags(f, c)
+	discovery.SetFlags(f, c.Discovery)
+	combostore.SetFlags(f, c.Store.Combo)
+	sqlitestore.SetFlags(f, c.Store.Sqlite)
+	bus.SetFlags(f, c.Bus)
+	pinger.SetFlags(f, c.Pinger)
+	enrichment.SetFlags(f, c.Enrichment)
+	netflows.SetFlags(f, c.NetFlows)
+	asn.SetFlags(f, c.Asn)
+	oui.SetFlags(f, c.Oui)
+
+	// Env
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.SetEnvPrefix("MASON")
+	viper.AutomaticEnv()
+
+	// Config file
+	viper.AddConfigPath(".")
+	viper.AddConfigPath(c.ConfigDirectory)
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	err := viper.ReadInConfig()
+	if err != nil && !errors.Is(err, viper.ConfigFileNotFoundError{}) {
+		log.Warn("did not find a config file to read")
+	}
+
+	err = viper.Unmarshal(c)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

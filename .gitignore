@@ -24,9 +24,7 @@ go.work.sum
 # Mason binary
 mason
 
-# Mason default data directory
+# Mason default directories
 data
-
-# Mason ssh keys
-mason_ssh_ed25519
-mason_ssh_ed25519.pub
+config
+testruns

@@ -13,7 +13,7 @@ import (
 type Pool[Inbound, Outbound any] struct {
 	Name          string
 	in            chan Inbound
-	doit          func(Inbound) (Outbound, error)
+	doit          func(context.Context, Inbound) (Outbound, error)
 	C             chan Outbound
 	E             chan error
 	activeworkers chan bool
@@ -22,7 +22,7 @@ type Pool[Inbound, Outbound any] struct {
 func New[Inbound, Outbound any](
 	name string,
 	in chan Inbound,
-	f func(Inbound) (Outbound, error),
+	f func(context.Context, Inbound) (Outbound, error),
 ) *Pool[Inbound, Outbound] {
 	return &Pool[Inbound, Outbound]{
 		Name: name,
@@ -55,15 +55,15 @@ func (wp *Pool[Inbound, Outbound]) Run(ctx context.Context, maxworkers int) {
 			}
 			wp.activeworkers <- true
 
-			go func(i Inbound) {
-				out, err := wp.doit(i)
+			go func(ctx context.Context, i Inbound) {
+				out, err := wp.doit(ctx, i)
 				if err != nil {
 					wp.E <- err
 				} else {
 					wp.C <- out
 				}
 				<-wp.activeworkers
-			}(i)
+			}(ctx, i)
 
 		}
 	}

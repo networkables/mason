@@ -6,59 +6,75 @@ package server
 
 import (
 	"context"
-	"net/netip"
 	"time"
 
-	"github.com/networkables/mason/internal/device"
-	"github.com/networkables/mason/internal/network"
+	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/internal/pinger"
+	"github.com/networkables/mason/nettools"
 )
 
 type (
 
-	// StoreAll is a complete implementation of all objects which need to be managed
-	StoreAll interface {
-		StoreNetwork
-		StoreDevice
-		StoreTimeseries
+	// Storeer is a complete implementation of all objects which need to be managed
+	Storer interface {
+		NetworkStorer
+		DeviceStorer
+		PerformancePingStorer
+		Close() error
 	}
 
-	// StoreNetwork allows for the saving and fetching of network definitions.
-	StoreNetwork interface {
-		AddNetwork(n network.Network) error
-		RemoveNetworkByName(name string) error
-		UpdateNetwork(network.Network) error
-		UpsertNetwork(network.Network) error
-		GetNetworkByName(name string) (network.Network, error)
-		GetFilteredNetworks(network.NetworkFilter) []network.Network
-		ListNetworks() []network.Network
-		CountNetworks() int
+	// NetworkStorer allows for the saving and fetching of network definitions.
+	NetworkStorer interface {
+		AddNetwork(context.Context, model.Network) error
+		RemoveNetworkByName(context.Context, string) error
+		UpdateNetwork(context.Context, model.Network) error
+		UpsertNetwork(context.Context, model.Network) error
+		GetNetworkByName(context.Context, string) (model.Network, error)
+		GetFilteredNetworks(context.Context, model.NetworkFilter) []model.Network
+		ListNetworks(context.Context) []model.Network
+		CountNetworks(context.Context) int
 	}
 
-	// StoreDevice allows for the saving and fetching of device definitions.
-	StoreDevice interface {
-		AddDevice(device.Device) error
-		RemoveDeviceByAddr(netip.Addr) error
-		UpdateDevice(device.Device) error
-		GetDeviceByAddr(netip.Addr) (device.Device, error)
-		GetFilteredDevices(device.DeviceFilter) []device.Device
-		ListDevices() []device.Device
-		CountDevices() int
+	// DeviceStorer allows for the saving and fetching of device definitions.
+	DeviceStorer interface {
+		AddDevice(context.Context, model.Device) error
+		RemoveDeviceByAddr(context.Context, model.Addr) error
+		UpdateDevice(context.Context, model.Device) (bool, error)
+		GetDeviceByAddr(context.Context, model.Addr) (model.Device, error)
+		GetFilteredDevices(context.Context, model.DeviceFilter) []model.Device
+		ListDevices(context.Context) []model.Device
+		CountDevices(context.Context) int
 	}
 
-	// StoreTimeseries allows for the saving and fetching of timeseries data.
-	StoreTimeseries interface {
-		WriteTimeseriesPoint(
+	// PerformancePingStorer allows for the saving and fetching of timeseries data.
+	PerformancePingStorer interface {
+		WritePerformancePing(
 			context.Context,
 			time.Time,
-			device.Device,
-			...pinger.TimeseriesPoint,
+			model.Device,
+			nettools.Icmp4EchoResponseStatistics,
 		) error
-		ReadTimeseriesPoints(
+		ReadPerformancePings(
 			context.Context,
-			device.Device,
+			model.Device,
 			time.Duration,
-			pinger.TimeseriesPoint,
-		) ([]pinger.TimeseriesPoint, error)
+		) ([]pinger.Point, error)
+	}
+
+	NetflowStorer interface {
+		AsnStorer
+		AddNetflows(context.Context, []model.IpFlow) error
+		GetNetflows(context.Context, model.Addr) ([]model.IpFlow, error)
+		FlowSummaryByIP(context.Context, model.Addr) ([]model.FlowSummaryForAddrByIP, error)
+		FlowSummaryByName(context.Context, model.Addr) ([]model.FlowSummaryForAddrByName, error)
+		FlowSummaryByCountry(
+			context.Context,
+			model.Addr,
+		) ([]model.FlowSummaryForAddrByCountry, error)
+	}
+
+	AsnStorer interface {
+		UpsertAsn(context.Context, model.Asn) error
+		GetAsn(context.Context, string) (model.Asn, error)
 	}
 )

@@ -22,7 +22,8 @@ func (p *pkg) Traceroute4(ctx context.Context, target netip.Addr, opts ...Icmp4E
 	for i := 0; i < hops; i++ {
 		hopr := make([]Icmp4EchoResponse, 0, traceopt.Count)
 		for c := 0; c < traceopt.Count; c++ {
-			r, err := rawPing4(ctx, target, i+1, traceopt.ListenAddress, traceopt.ReadTimeout, traceopt.IcmpID, traceopt.IcmpSeq, traceopt.AllowAllErrors)
+			// Can only use privileged ping for traceroute
+			r, err := rawPingIcmp4(ctx, target, i+1, traceopt.ListenAddress, traceopt.ReadTimeout, traceopt.IcmpID, traceopt.IcmpSeq, traceopt.AllowAllErrors)
 			hopr = append(hopr, r)
 			if err == nil {
 				i = hops

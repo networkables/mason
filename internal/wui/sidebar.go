@@ -5,6 +5,7 @@
 package wui
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -13,11 +14,12 @@ import (
 )
 
 func (w WUI) sidebarApiHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	selected := r.URL.Query().Get("selected")
 	if selected == "" {
 		selected = "dashboard"
 	}
-	w.sideBarContent(selected).Render(wr)
+	w.sideBarContent(ctx, selected).Render(wr)
 }
 
 func sideBarLink(name string, selected string, url string, icon func() g.Node) g.Node {
@@ -95,7 +97,7 @@ func sideBarSubsection(name string, icon func() g.Node, links ...g.Node) g.Node 
 	)
 }
 
-func (w WUI) sideBarContent(selected string) g.Node {
+func (w WUI) sideBarContent(ctx context.Context, selected string) g.Node {
 	return h.Div(
 		h.Label(h.For("my-drawer"), h.Class("drawer-overlay")),
 		h.Nav(
@@ -108,7 +110,7 @@ func (w WUI) sideBarContent(selected string) g.Node {
 			h.Ul(
 				h.Class("menu"),
 				sideBarLink("Dashboard", selected, urlRoot, svgModernHome),
-				sideBarLinkDevices(len(w.m.ListDevices()), selected),
+				sideBarLinkDevices(len(w.m.ListDevices(ctx)), selected),
 				sideBarLink("Networks", selected, urlNetworks, svgWifi),
 				sideBarSubsection(
 					"Tools", svgWrenchScrewdriver,

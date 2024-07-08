@@ -18,12 +18,13 @@ import (
 )
 
 func (w WUI) wuiToolTracerouteHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
 		w.wuiToolTraceroute(nil, nil),
 	)
-	w.basePage("traceroute", content, nil).Render(wr)
+	w.basePage(ctx, "traceroute", content, nil).Render(wr)
 }
 
 func (w WUI) wuiToolTraceroute(tr []nettools.Icmp4EchoResponseStatistics, err error) g.Node {
@@ -71,7 +72,7 @@ func wuiTracerouteResultTable(tr []nettools.Icmp4EchoResponseStatistics) g.Node 
 	}
 	x := 0
 	return wuiCard("Traceroute Results",
-		wuiTable([]string{"Hop", "Peer", "PacketLoss", "Mean", "Max"},
+		wuiTable([]string{"Hop", "Peer", "PacketLoss", "Mean", "Max", "ASN", "OrgName"},
 			g.Group(
 				g.Map(tr, func(hop nettools.Icmp4EchoResponseStatistics) g.Node {
 					x += 1
@@ -81,6 +82,8 @@ func wuiTracerouteResultTable(tr []nettools.Icmp4EchoResponseStatistics) g.Node 
 						h.Td(g.Text(fmt.Sprintf("%3.0f %%", hop.PacketLoss))),
 						h.Td(g.Text(fmtDur(hop.Mean))),
 						h.Td(g.Text(fmtDur(hop.Maximum))),
+						h.Td(g.Text(hop.Asn)),
+						h.Td(g.Text(hop.OrgName)),
 					)
 				}),
 			),

@@ -18,12 +18,13 @@ import (
 )
 
 func (w WUI) wuiToolTLSHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
 		w.wuiToolTLS(nil, nil),
 	)
-	w.basePage("tls", content, nil).Render(wr)
+	w.basePage(ctx, "tls", content, nil).Render(wr)
 }
 
 func (w WUI) wuiToolTLS(info *nettools.TLS, err error) g.Node {

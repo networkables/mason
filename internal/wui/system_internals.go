@@ -5,31 +5,32 @@
 package wui
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"runtime/debug"
-	"strconv"
 
 	"github.com/dustin/go-humanize"
+	"github.com/emicklei/tre"
 	g "github.com/maragudk/gomponents"
 	h "github.com/maragudk/gomponents/html"
 
 	"github.com/networkables/mason/internal/bus"
 	"github.com/networkables/mason/internal/server"
-	"github.com/networkables/mason/internal/stackerr"
 )
 
 func (w WUI) wuiInternalsPageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
-		w.wuiInternalsMain(),
+		w.wuiInternalsMain(ctx),
 	)
-	w.basePage("internals", content, nil).Render(wr)
+	w.basePage(ctx, "internals", content, nil).Render(wr)
 }
 
-func (w WUI) wuiInternalsMain() g.Node {
-	internals := w.m.GetInternalsSnapshot()
+func (w WUI) wuiInternalsMain(ctx context.Context) g.Node {
+	internals := w.m.GetInternalsSnapshot(ctx)
 	return grid("",
 		wuiCard("Mason", masonInternalsToTable(internals)),
 		wuiCard("Errors", wuiErrorsToTable(internals.Errors)),
@@ -43,16 +44,17 @@ func masonInternalsToTable(iv server.MasonInternalsView) g.Node {
 		toTD("Networks", fmt.Sprint(iv.NetworkStoreCount)),
 		toTD("Devices", fmt.Sprint(iv.DeviceStoreCount)),
 		toTD(
-			"NetworkScan Workers",
-			fmt.Sprintf("%d / %d", iv.NetworkScanActive, iv.NetworkScanMaxWorkers),
-		),
-		toTD(
 			"Discovery Workers",
 			fmt.Sprintf("%d / %d", iv.AddressScanActive, iv.DiscoveryMaxWorkers),
 		),
 		toTD(
 			"Enrichment Workers",
-			fmt.Sprintf("%d / %d", iv.DeviceEnrichActive, iv.EnrichmentMaxWorkers),
+			fmt.Sprintf(
+				"%d / %d (Q: %d)",
+				iv.DeviceEnrichActive,
+				iv.EnrichmentMaxWorkers,
+				iv.EnrichmentBackPressure,
+			),
 		),
 		toTD(
 			"PerformancePinger Workers",
@@ -60,6 +62,7 @@ func masonInternalsToTable(iv server.MasonInternalsView) g.Node {
 		),
 		toTD("PortScan MaxWorkers", fmt.Sprint(iv.PortScanMaxWorkers)),
 		toTD("Current Network Scan", fmt.Sprint(iv.CurrentNetworkScan)),
+		toTD("Bus Back Pressure", fmt.Sprint(iv.BusBackPressure)),
 	)
 }
 
@@ -142,53 +145,46 @@ func wuiErrorsToTable(errors []bus.HistoricalError) g.Node {
 		[]string{"Time", "Type", "Error", "Stack"},
 		g.Group(
 			g.Map(errors, func(he bus.HistoricalError) g.Node {
-				// stack := ""
+				stack := ""
 				tp := he.Type()
-				se, ok := he.E.(stackerr.StackErr)
+				se, ok := he.E.(tre.TracingError)
 				if ok {
-					tp = fmt.Sprintf("%T", se.Unwrap())
-					// stack = stackerr.Stack()
+					tp = fmt.Sprintf("%T", se.Cause())
+					stack = (se.LoggingContext()["stack"]).(string)
 				}
 				return h.Tr(
 					h.Td(g.Text(he.FmtTime())),
 					h.Td(g.Text(tp)),
 					h.Td(g.Text(he.E.Error())),
-					h.Td(
-						g.If(
-							ok,
-							g.Group(g.Map(se.Frames, func(frame stackerr.Frame) g.Node {
-								return wuiStackFrame(frame)
-							})),
-						),
-					),
+					h.Td(g.Text(stack)),
 				)
 			}),
 		),
 	)
 }
 
-func wuiStackFrame(frame stackerr.Frame) g.Node {
-	return h.Div(
-		h.Div(
-			h.Span(
-				h.Class("text-xs text-green-400"),
-				g.Text(frame.File+":"+strconv.Itoa(frame.Line)),
-			),
-			// h.Span(
-			// 	h.Class("text-xs"),
-			// 	g.Text(" ("+frame.PCStr+")"),
-			// ),
-		),
-		// h.Div(
-		// 	h.Class("pl-4"),
-		// 	h.Span(
-		// 		h.Class("text-xs text-blue-400"),
-		// 		g.Text(frame.Function),
-		// 	),
-		// 	h.Span(
-		// 		h.Class("text-xs"),
-		// 		g.Text(" "+frame.Source),
-		// 	),
-		// ),
-	)
-}
+// func wuiStackFrame(frame stackerr.Frame) g.Node {
+// 	return h.Div(
+// 		h.Div(
+// 			h.Span(
+// 				h.Class("text-xs text-green-400"),
+// 				g.Text(frame.File+":"+strconv.Itoa(frame.Line)),
+// 			),
+// 			// h.Span(
+// 			// 	h.Class("text-xs"),
+// 			// 	g.Text(" ("+frame.PCStr+")"),
+// 			// ),
+// 		),
+// 		// h.Div(
+// 		// 	h.Class("pl-4"),
+// 		// 	h.Span(
+// 		// 		h.Class("text-xs text-blue-400"),
+// 		// 		g.Text(frame.Function),
+// 		// 	),
+// 		// 	h.Span(
+// 		// 		h.Class("text-xs"),
+// 		// 		g.Text(" "+frame.Source),
+// 		// 	),
+// 		// ),
+// 	)
+// }

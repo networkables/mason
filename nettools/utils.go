@@ -5,14 +5,10 @@
 package nettools
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"runtime"
 	"runtime/debug"
-	"strings"
-
-	"github.com/charmbracelet/log"
 )
 
 var _ Utiler = (*pkg)(nil)
@@ -20,7 +16,6 @@ var _ Utiler = (*pkg)(nil)
 type Utiler interface {
 	IsRandomMac(net.HardwareAddr) bool
 	GetUserAgent() string
-	OuiLookup(net.HardwareAddr) (string, error)
 }
 
 func IsRandomMac(mac net.HardwareAddr) bool {
@@ -28,6 +23,9 @@ func IsRandomMac(mac net.HardwareAddr) bool {
 }
 
 func (p pkg) IsRandomMac(mac net.HardwareAddr) bool {
+	if len(mac) == 0 {
+		return false
+	}
 	lsb := mac[0] & 0x0F
 	switch lsb {
 	case 0x2, 0x6, 0xA, 0xE:
@@ -58,46 +56,46 @@ func (p *pkg) GetUserAgent() string {
 	return p.userAgent
 }
 
-func OuiLookup(mac net.HardwareAddr) (string, error) {
-	return DefaultPkg.OuiLookup(mac)
-}
-
-func (p pkg) OuiLookup(mac net.HardwareAddr) (string, error) {
-	if len(mac) == 0 {
-		return "", nil
-	}
-	if p.IsRandomMac(mac) {
-		return "", ErrRandomizedMacAddress
-	}
-
-	prefixString := fmt.Sprintf("%02X%02X%02X", mac[0], mac[1], mac[2])
-	if name, ok := p.ouicache[prefixString]; ok {
-		return name, nil
-	}
-
-	f, err := ouifile.Open("oui/base16_oui.txt")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	var line string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line = scanner.Text()
-		if strings.HasPrefix(line, prefixString) {
-			after, found := strings.CutPrefix(line, prefixString)
-			if !found {
-				log.Error(
-					"ouiLookup cutprefix not found",
-					"line",
-					line,
-				) // TODO: do we need to surface this?
-				return "", nil
-			}
-			p.ouicache[prefixString] = after
-			return after, nil
-		}
-	}
-	// log.Debug("ouilookup could not find mac", "prefixString", prefixString, "addr", mac)
-	return "", nil
-}
+// func OuiLookup(mac net.HardwareAddr) (string, error) {
+// 	return DefaultPkg.OuiLookup(mac)
+// }
+//
+// func (p pkg) OuiLookup(mac net.HardwareAddr) (string, error) {
+// 	if len(mac) == 0 {
+// 		return "", nil
+// 	}
+// 	if p.IsRandomMac(mac) {
+// 		return "", ErrRandomizedMacAddress
+// 	}
+//
+// 	prefixString := fmt.Sprintf("%02X%02X%02X", mac[0], mac[1], mac[2])
+// 	if name, ok := p.ouicache[prefixString]; ok {
+// 		return name, nil
+// 	}
+//
+// 	f, err := ouifile.Open("oui/base16_oui.txt")
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	defer f.Close()
+// 	var line string
+// 	scanner := bufio.NewScanner(f)
+// 	for scanner.Scan() {
+// 		line = scanner.Text()
+// 		if strings.HasPrefix(line, prefixString) {
+// 			after, found := strings.CutPrefix(line, prefixString)
+// 			if !found {
+// 				log.Error(
+// 					"ouiLookup cutprefix not found",
+// 					"line",
+// 					line,
+// 				) // TODO: do we need to surface this?
+// 				return "", nil
+// 			}
+// 			p.ouicache[prefixString] = after
+// 			return after, nil
+// 		}
+// 	}
+// 	// log.Debug("ouilookup could not find mac", "prefixString", prefixString, "addr", mac)
+// 	return "", nil
+// }

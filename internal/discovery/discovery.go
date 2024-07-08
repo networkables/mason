@@ -8,34 +8,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 	"time"
 
-	"github.com/networkables/mason/internal/config"
-	"github.com/networkables/mason/internal/device"
-	"github.com/networkables/mason/internal/network"
-	"github.com/networkables/mason/internal/stackerr"
+	"github.com/emicklei/tre"
+
+	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/nettools"
 )
 
 const (
-	ArpDiscoverySource     device.DiscoverySource = "ARP"
-	PingDiscoverySource    device.DiscoverySource = "PING"
-	SNMPDiscoverySource    device.DiscoverySource = "SNMP"
-	SNMPArpDiscoverySource device.DiscoverySource = "SNMP_ARP"
+	ArpDiscoverySource     model.DiscoverySource = "ARP"
+	PingDiscoverySource    model.DiscoverySource = "PING"
+	SNMPDiscoverySource    model.DiscoverySource = "SNMP"
+	SNMPArpDiscoverySource model.DiscoverySource = "SNMP_ARP"
 )
 
 type (
 	DiscoverDevicesFromSNMPDevice struct {
-		device.Device
+		model.Device
 	}
 	DiscoverNetworksFromSNMPDevice struct {
-		device.Device
+		model.Device
 	}
 )
 
 type IPv6ExcludedFromDiscovery struct {
-	Network network.Network
+	Network model.Network
 }
 
 var ErrIPv6ExcludedFromDiscovery = IPv6ExcludedFromDiscovery{}
@@ -44,7 +42,7 @@ func (e IPv6ExcludedFromDiscovery) Error() string {
 	return fmt.Sprintf("ipv6 network has been excluded from discovery %s", e.Network.String())
 }
 
-func IPv6NetworkExcluded(n network.Network) IPv6ExcludedFromDiscovery {
+func IPv6NetworkExcluded(n model.Network) IPv6ExcludedFromDiscovery {
 	return IPv6ExcludedFromDiscovery{
 		Network: n,
 	}
@@ -59,7 +57,7 @@ func (e IPv6ExcludedFromDiscovery) Is(target error) bool {
 }
 
 type NoDeviceDiscoveredError struct {
-	Addr netip.Addr
+	Addr model.Addr
 }
 
 var ErrNoDeviceDiscovered = NoDeviceDiscoveredError{}
@@ -76,43 +74,44 @@ func (e NoDeviceDiscoveredError) Is(target error) bool {
 	return true
 }
 
-func NoDeviceDiscovered(addr netip.Addr) NoDeviceDiscoveredError {
+func NoDeviceDiscovered(addr model.Addr) NoDeviceDiscoveredError {
 	return NoDeviceDiscoveredError{Addr: addr}
 }
 
-type scanfunc func(netip.Addr) (device.EventDeviceDiscovered, error)
+type scanfunc func(context.Context, model.Addr) (model.EventDeviceDiscovered, error)
 
-func BuildAddrScanners(cfg *config.Discovery) []scanfunc {
+func BuildAddrScanners(cfg *Config) []scanfunc {
 	ret := make([]scanfunc, 0)
-	if *cfg.ArpPing.Enabled {
+	if cfg.Arp.Enabled {
 		ret = append(ret,
-			func(addr netip.Addr) (device.EventDeviceDiscovered, error) {
-				return discoverDeviceWithArp(addr, cfg.ArpPing)
+			func(ctx context.Context, addr model.Addr) (model.EventDeviceDiscovered, error) {
+				return discoverDeviceWithArp(ctx, addr, cfg.Arp)
 			},
 		)
 	}
-	if *cfg.IcmpPing.Enabled {
+	if cfg.Icmp.Enabled {
 		ret = append(ret,
-			func(addr netip.Addr) (device.EventDeviceDiscovered, error) {
-				// TODO: Need way to pass in context
-				return discoverDeviceWithICMP(context.Background(), addr, cfg.IcmpPing)
+			func(ctx context.Context, addr model.Addr) (model.EventDeviceDiscovered, error) {
+				return discoverDeviceWithICMP(ctx, addr, cfg.Icmp)
 			},
 		)
 	}
-	if *cfg.Snmp.Enabled {
+	if cfg.Snmp.Enabled {
 		ret = append(ret,
-			func(addr netip.Addr) (device.EventDeviceDiscovered, error) {
-				return discoverDeviceWithSNMP(addr, cfg.Snmp)
+			func(ctx context.Context, addr model.Addr) (model.EventDeviceDiscovered, error) {
+				return discoverDeviceWithSNMP(ctx, addr, cfg.Snmp)
 			},
 		)
 	}
 	return ret
 }
 
-func BuildAddrScannerFunc(funcs []scanfunc) func(netip.Addr) (device.EventDeviceDiscovered, error) {
-	return func(addr netip.Addr) (device.EventDeviceDiscovered, error) {
+func BuildAddrScannerFunc(
+	funcs []scanfunc,
+) func(context.Context, model.Addr) (model.EventDeviceDiscovered, error) {
+	return func(ctx context.Context, addr model.Addr) (model.EventDeviceDiscovered, error) {
 		for _, f := range funcs {
-			device, err := f(addr)
+			device, err := f(ctx, addr)
 			if err == nil {
 				return device, nil
 			}
@@ -122,28 +121,38 @@ func BuildAddrScannerFunc(funcs []scanfunc) func(netip.Addr) (device.EventDevice
 			}
 			return device, err
 		}
-		return device.EventDeviceDiscovered{}, NoDeviceDiscovered(addr)
+		return model.EventDeviceDiscovered{}, NoDeviceDiscovered(addr)
 	}
 }
 
-func BuildNetworkScanFunc(q chan netip.Addr, status *string) func(network.Network) (string, error) {
-	return func(n network.Network) (string, error) {
-		if n.Prefix.Addr().Is6() {
+func BuildNetworkScanFunc(
+	q chan model.Addr,
+	status *string,
+) func(context.Context, model.Network) (string, error) {
+	return func(ctx context.Context, n model.Network) (string, error) {
+		if n.Prefix.Is6() {
 			return "", nil
 		}
 
 		*status = n.String()
-		ni := network.NewNetworkIteratorAsChannel(n)
+		ni := model.NewNetworkIteratorAsChannel(n)
 		for addr := range ni.C {
-			q <- addr
+			if ctx.Err() != nil {
+				return "", nil
+			}
+			select {
+			case <-ctx.Done():
+				break
+			case q <- addr:
+			}
 		}
 		*status = ""
 		return "", nil
 	}
 }
 
-func SnmpArpTableRescanFilter(cfg *config.DiscoverySNMPConfig) device.DeviceFilter {
-	return func(d device.Device) bool {
+func SnmpArpTableRescanFilter(cfg *SNMPConfig) model.DeviceFilter {
+	return func(d model.Device) bool {
 		if d.SNMP.LastArpTableScan.IsZero() {
 			return true
 		}
@@ -151,15 +160,15 @@ func SnmpArpTableRescanFilter(cfg *config.DiscoverySNMPConfig) device.DeviceFilt
 			return false
 		}
 		since := time.Since(d.SNMP.LastArpTableScan)
-		if since > *cfg.ArpTableRescanInterval {
+		if since > cfg.ArpTableRescanInterval {
 			return true
 		}
 		return false
 	}
 }
 
-func SnmpInterfaceRescanFilter(cfg *config.DiscoverySNMPConfig) device.DeviceFilter {
-	return func(d device.Device) bool {
+func SnmpInterfaceRescanFilter(cfg *SNMPConfig) model.DeviceFilter {
+	return func(d model.Device) bool {
 		if d.SNMP.LastInterfacesScan.IsZero() {
 			return true
 		}
@@ -167,20 +176,20 @@ func SnmpInterfaceRescanFilter(cfg *config.DiscoverySNMPConfig) device.DeviceFil
 			return false
 		}
 		since := time.Since(d.SNMP.LastInterfacesScan)
-		if since > *cfg.InterfaceRescanInterval {
+		if since > cfg.InterfaceRescanInterval {
 			return true
 		}
 		return false
 	}
 }
 
-func NetworkRescanFilter(cfg *config.Discovery) network.NetworkFilter {
-	return func(network network.Network) bool {
+func NetworkRescanFilter(cfg *Config) model.NetworkFilter {
+	return func(network model.Network) bool {
 		if network.LastScan.IsZero() {
 			return true
 		}
 		since := time.Since(network.LastScan)
-		if since > *cfg.NetworkScanInterval {
+		if since > cfg.NetworkScanInterval {
 			return true
 		}
 		return false
@@ -188,87 +197,95 @@ func NetworkRescanFilter(cfg *config.Discovery) network.NetworkFilter {
 }
 
 func discoverDeviceWithArp(
-	addr netip.Addr,
-	cfg *config.DiscoveryArpConfig,
-) (device.EventDeviceDiscovered, error) {
+	ctx context.Context,
+	addr model.Addr,
+	cfg *ArpConfig,
+) (model.EventDeviceDiscovered, error) {
 	entry, err := nettools.FindHardwareAddrOf(
-		context.TODO(),
-		addr,
-		nettools.WithArpReplyTimeout(*cfg.Timeout),
+		ctx,
+		addr.Addr(),
+		nettools.WithArpReplyTimeout(cfg.Timeout),
 	)
 	if err != nil {
 		if errors.Is(err, nettools.ErrNoResponseFromRemote) {
-			return device.EmptyDiscoveredDevice, NoDeviceDiscovered(addr)
+			return model.EmptyDiscoveredDevice, NoDeviceDiscovered(addr)
 		}
-		return device.EmptyDiscoveredDevice, stackerr.New(err)
+		return model.EmptyDiscoveredDevice, tre.New(
+			err,
+			"find hardware addr of",
+			"addr",
+			addr.Addr(),
+		)
 	}
 	if err == nil {
-		return device.EventDeviceDiscovered{
+		return model.EventDeviceDiscovered{
 			Addr:         addr,
-			MAC:          entry.MAC,
+			MAC:          model.HardwareAddrToMAC(entry.MAC),
 			DiscoveredBy: ArpDiscoverySource,
 			DiscoveredAt: time.Now(),
 		}, nil
 	}
-	return device.EmptyDiscoveredDevice, NoDeviceDiscovered(addr)
+	return model.EmptyDiscoveredDevice, NoDeviceDiscovered(addr)
 }
 
 func discoverDeviceWithICMP(
 	ctx context.Context,
-	addr netip.Addr,
-	cfg *config.DiscoveryICMPConfig,
-) (event device.EventDeviceDiscovered, err error) {
+	addr model.Addr,
+	cfg *ICMPConfig,
+) (event model.EventDeviceDiscovered, err error) {
 	responses, err := nettools.Icmp4Echo(
 		ctx,
-		addr,
-		nettools.I4EWithCount(*cfg.PingCount),
-		nettools.I4EWithReadTimeout(*cfg.Timeout),
+		addr.Addr(),
+		nettools.I4EWithCount(cfg.PingCount),
+		nettools.I4EWithReadTimeout(cfg.Timeout),
+		nettools.I4EWithPrivileged(cfg.Privileged),
+		nettools.I4EWithBetweenDuration(cfg.SleepBetween),
 	)
 	if err != nil {
 		if errors.Is(err, nettools.ErrNoResponseFromRemote) {
 			return event, NoDeviceDiscovered(addr)
 		}
-		return event, stackerr.New(err)
+		return event, tre.New(err, "icmp4 echo")
 	}
 	stats := nettools.CalculateIcmp4EchoResponseStatistics(responses)
 	if stats.SuccessCount > 0 {
 		ts := time.Now()
-		edd := device.Device{
+		edd := model.Device{
 			Addr:         addr,
 			DiscoveredBy: PingDiscoverySource,
 			DiscoveredAt: ts,
 		}
 		edd.UpdateFromPingStats(stats, ts)
-		return device.EventDeviceDiscovered(edd), nil
+		return model.EventDeviceDiscovered(edd), nil
 	}
 
 	return event, NoDeviceDiscovered(addr)
 }
 
 func discoverDeviceWithSNMP(
-	addr netip.Addr,
-	cfg *config.DiscoverySNMPConfig,
-) (device.EventDeviceDiscovered, error) {
-	ctx := context.TODO()
+	ctx context.Context,
+	addr model.Addr,
+	cfg *SNMPConfig,
+) (model.EventDeviceDiscovered, error) {
 	for _, port := range cfg.Ports {
 		for _, community := range cfg.Community {
-			ssi, err := nettools.SnmpGetSystemInfo(ctx, addr,
+			ssi, err := nettools.SnmpGetSystemInfo(ctx, addr.Addr(),
 				nettools.WithSnmpCommunity(community),
 				nettools.WithSnmpPort(port),
-				nettools.WithSnmpReplyTimeout(*cfg.Timeout))
+				nettools.WithSnmpReplyTimeout(cfg.Timeout))
 			if err != nil {
 				if errors.Is(err, nettools.ErrConnectionRefused) ||
 					errors.Is(err, nettools.ErrNoResponseFromRemote) {
 					continue
 				}
-				return device.EventDeviceDiscovered{}, stackerr.New(err)
+				return model.EventDeviceDiscovered{}, tre.New(err, "snmp check")
 			}
 			if ssi.Description != "" {
-				return device.EventDeviceDiscovered{
+				return model.EventDeviceDiscovered{
 					Addr:         addr,
 					DiscoveredBy: SNMPDiscoverySource,
 					DiscoveredAt: time.Now(),
-					SNMP: device.SNMP{
+					SNMP: model.SNMP{
 						Name:        ssi.Name,
 						Description: ssi.Description,
 						Community:   community,
@@ -279,5 +296,5 @@ func discoverDeviceWithSNMP(
 
 		}
 	}
-	return device.EventDeviceDiscovered{}, NoDeviceDiscovered(addr)
+	return model.EventDeviceDiscovered{}, NoDeviceDiscovered(addr)
 }

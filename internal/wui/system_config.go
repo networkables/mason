@@ -5,6 +5,7 @@
 package wui
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -13,16 +14,17 @@ import (
 	g "github.com/maragudk/gomponents"
 	h "github.com/maragudk/gomponents/html"
 
-	"github.com/networkables/mason/internal/config"
+	"github.com/networkables/mason/internal/server"
 )
 
 func (w WUI) wuiConfigPageHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
 		w.wuiConfigMain(),
 	)
-	w.basePage("config", content, nil).Render(wr)
+	w.basePage(ctx, "config", content, nil).Render(wr)
 }
 
 func (w WUI) wuiConfigMain() g.Node {
@@ -55,7 +57,7 @@ func (w WUI) wuiConfigMain() g.Node {
 	)
 }
 
-func configToTable(cfg config.Config) g.Node {
+func configToTable(cfg *server.Config) g.Node {
 	val := reflect.ValueOf(cfg)
 	if val.Kind() == reflect.Pointer {
 		val = val.Elem()

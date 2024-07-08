@@ -5,6 +5,7 @@
 package wui
 
 import (
+	"context"
 	"net/http"
 
 	g "github.com/maragudk/gomponents"
@@ -12,12 +13,13 @@ import (
 )
 
 func (w WUI) wuiToolInvestigatorHandler(wr http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	content := h.Main(
 		h.ID("maincontent"),
 		h.Class("drawer-content"),
 		w.wuiToolInvestigator(),
 	)
-	w.basePage("investigator", content, nil).Render(wr)
+	w.basePage(ctx, "investigator", content, nil).Render(wr)
 }
 
 func (w WUI) wuiToolInvestigator() g.Node {
