@@ -60,7 +60,7 @@ docker run \
 ```
 mkdir -p mason/data mason/config
 docker run \
-	--name mason \
+  --name mason \
   --rm \
   -u root \
   -e TZ="America/New_York" \
