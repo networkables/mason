@@ -86,7 +86,7 @@ docker run \
 - Default configuration designed to be productive on the initial run
 - Core tools are additional exposed via command line and as network services
 - Built in Web and Terminal UIs
-- Low memory requirements ( 25-50 MB )
+- Low memory requirements ( 25-50 MB ) [ 75-100 MB when ASN and OUI enabled ]
 - Discovery Techniques
     * ARP Requests over address space for local LANs
     * Ping (ICMPv4) requests over address space for known/discovered networks
