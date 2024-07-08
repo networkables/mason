@@ -14,7 +14,7 @@ Mason is a network discovery and monitoring tool.  It includes common network to
 
 ## Quickstart
 
-### Non-Docker
+### OS binary
 
 1. Download pre-built binary [here](https://github.com/networkables/mason/releases)
 2. Grant admin network permissions to the binary (instead of running mason as root): `sudo ./mason sys setcap`
@@ -25,7 +25,7 @@ Mason is a network discovery and monitoring tool.  It includes common network to
 
 #### Trial without Persisting any data
 
-`
+```
 docker run \
   --name mason \
   --rm \
@@ -34,11 +34,11 @@ docker run \
   -p "4322:4322" \
   -p "2055:2055/udp" \
   mason server
-`
+```
 
 #### Persist data between runs
 
-`
+```
 mkdir -p mason/data mason/config
 chmod 0775 mason/data mason/config
 sudo chgrp 65532 mason/data mason/config
@@ -53,11 +53,11 @@ docker run \
   -v ./mason/data:/home/nonroot/data \
   -v ./mason/config:/home/nonroot/config \
   mason server
-`
+```
 
 #### Persist and run privileged to allow traceroute
 
-`
+```
 mkdir -p mason/data mason/config
 docker run \
 	--name mason \
@@ -70,7 +70,7 @@ docker run \
   -v ./mason/data:/home/nonroot/data \
   -v ./mason/config:/home/nonroot/config \
   mason server --asn.enabled=true --oui.enabled=true --discovery.icmp.privileged=true
-`
+```
 
 ## Features
 
@@ -97,9 +97,9 @@ docker run \
     - Different monitoring intervals for servers vs. client devices
 - Charting of ping response times over time
 - Use OUI data from ieee.org to find manufacturer of a device
-    * Enable usage with *--oui.enabled=true*
+    * Enable usage with __--oui.enabled=true__
 - Use IP/ASN data from [https://github.com/sapics](https://github.com/sapics/ip-location-db/) to find Network/Country data
-    * Enable usage with *--asn.enabled=true*
+    * Enable usage with __--asn.enabled=true__
 - IPFIX/Netflow listener to record in/out traffic flows of devices
     * See flows grouped by Network Organaization, Country, and IP
 
@@ -135,10 +135,10 @@ TLS Information
 
 ### Config
 
-Mason ships with sane defaults you might want to customize to your needs.  You can use command line switches, environment variables, or a yaml file.  The default location of the config file is *config/config.yaml* and you can change the directory using the *--config.directory* command line switch or *MASON_CONFIG_DIRECTORY* environment variable.
+Mason ships with sane defaults you might want to customize to your needs.  You can use command line switches, environment variables, or a yaml file.  The default location of the config file is __config/config.yaml__ and you can change the directory using the __--config.directory__ command line switch or __MASON_CONFIG_DIRECTORY__ environment variable.
 
 This is a full config file showing all the default values.  Customizations via config file only need to include what values you wish to modify (you do not have to duplicate every configuration value)
-`
+```
 asn:
     asnurl: https://github.com/sapics/ip-location-db/raw/main/asn/asn-ipv4.csv
     cachefilename: cache.mpz1
@@ -238,7 +238,7 @@ tui:
 wui:
     enabled: true
     listenaddress: :4380
-`
+```
 
 ## Support
 
