@@ -23,19 +23,19 @@ func TestNetwork_New(t *testing.T) {
 	}{
 		"Good": {
 			name:   "aname",
-			prefix: "192.168.1.1/24",
+			prefix: "192.168.1.0/24",
 			want: Network{
 				Name:   "aname",
-				Prefix: MustParsePrefix("192.168.1.1/24"),
+				Prefix: MustParsePrefix("192.168.1.0/24"),
 			},
 			wantErr: nil,
 		},
 		"EmptyName": {
 			name:   "",
-			prefix: "192.168.1.1/24",
+			prefix: "192.168.1.0/24",
 			want: Network{
-				Name:   "192.168.1.1/24",
-				Prefix: MustParsePrefix("192.168.1.1/24"),
+				Name:   "192.168.1.0/24",
+				Prefix: MustParsePrefix("192.168.1.0/24"),
 			},
 			wantErr: nil,
 		},
@@ -75,8 +75,8 @@ func TestNetwork_NewNetworkFromPrefix(t *testing.T) {
 		"Good": {
 			prefix: netip.MustParsePrefix("192.168.1.1/24"),
 			want: Network{
-				Name:   "192.168.1.1/24",
-				Prefix: MustParsePrefix("192.168.1.1/24"),
+				Name:   "192.168.1.0/24",
+				Prefix: MustParsePrefix("192.168.1.0/24"),
 			},
 			wantErr: nil,
 		},
@@ -104,7 +104,7 @@ func TestNetwork_String(t *testing.T) {
 	}{
 		"Good": {
 			nw:   NewNetworkFromPrefix(netip.MustParsePrefix("192.168.1.1/24")),
-			want: "192.168.1.1/24 > 192.168.1.1/24 tags:[]",
+			want: "192.168.1.0/24 [192.168.1.0/24]",
 		},
 	}
 

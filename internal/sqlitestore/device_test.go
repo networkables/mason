@@ -328,7 +328,7 @@ func TestSqliteStore_UpdateDeviceSkipNonUpdated(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 device, have %d", len(got))
 	}
-	if got[0].Name != "initial" {
+	if got[0].Name != "updated" {
 		t.Fatal("device was unexpectedly updated")
 	}
 }

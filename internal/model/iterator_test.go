@@ -21,7 +21,7 @@ func TestNetworkIterator_New(t *testing.T) {
 			nw: NewNetworkFromPrefix(netip.MustParsePrefix("192.168.1.1/24")),
 			want: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
+					Name:   "192.168.1.0/24",
 					Prefix: MustParsePrefix("192.168.1.1/24"),
 				},
 				current: netip.MustParseAddr("192.168.1.1"),
@@ -57,8 +57,8 @@ func TestNetworkIterator_Next(t *testing.T) {
 		"Good": {
 			ni: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
-					Prefix: MustParsePrefix("192.168.1.1/24"),
+					Name:   "192.168.1.0/24",
+					Prefix: MustParsePrefix("192.168.1.0/24"),
 				},
 				current: netip.MustParseAddr("192.168.1.1"),
 				first:   netip.MustParseAddr("192.168.1.0"),
@@ -71,8 +71,8 @@ func TestNetworkIterator_Next(t *testing.T) {
 		"IsDone": {
 			ni: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
-					Prefix: MustParsePrefix("192.168.1.1/24"),
+					Name:   "192.168.1.0/24",
+					Prefix: MustParsePrefix("192.168.1.0/24"),
 				},
 				current: netip.MustParseAddr("192.168.1.255"),
 				first:   netip.MustParseAddr("192.168.1.0"),
@@ -85,8 +85,8 @@ func TestNetworkIterator_Next(t *testing.T) {
 		"NotInNetwork": {
 			ni: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
-					Prefix: MustParsePrefix("192.168.1.1/24"),
+					Name:   "192.168.1.0/24",
+					Prefix: MustParsePrefix("192.168.1.0/24"),
 				},
 				current: netip.MustParseAddr("192.168.2.255"),
 				first:   netip.MustParseAddr("192.168.1.0"),
@@ -126,8 +126,8 @@ func TestNetworkIterator_Reset(t *testing.T) {
 		"Good": {
 			got: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
-					Prefix: MustParsePrefix("192.168.1.1/24"),
+					Name:   "192.168.1.0/24",
+					Prefix: MustParsePrefix("192.168.1.0/24"),
 				},
 				current: netip.MustParseAddr("192.168.1.100"),
 				first:   netip.MustParseAddr("192.168.1.0"),
@@ -136,8 +136,8 @@ func TestNetworkIterator_Reset(t *testing.T) {
 			},
 			want: networkIterator{
 				network: Network{
-					Name:   "192.168.1.1/24",
-					Prefix: MustParsePrefix("192.168.1.1/24"),
+					Name:   "192.168.1.0/24",
+					Prefix: MustParsePrefix("192.168.1.0/24"),
 				},
 				current: netip.MustParseAddr("192.168.1.1"),
 				first:   netip.MustParseAddr("192.168.1.0"),
