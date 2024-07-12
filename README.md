@@ -6,13 +6,17 @@ The network toolbox
 
 ---
 
-Mason is a network discovery and monitoring tool.  It includes common network tools such as ping, traceroute, and snmp data fetching providing visibility of networks.  Discovered devices are reguarly monitored by ping with historical data graphed for analysis.
+Mason is a network discovery and monitoring tool.  It includes common network tools such as ping, traceroute, and snmp data fetching providing visibility of networks.  Discovered devices are regularly monitored by ping with historical data graphed for analysis.
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/networkables/mason)](https://goreportcard.com/report/github.com/networkables/mason)
 
 ---
 
 ## Quickstart
+
+### Which method?
+
+Right now using the OS binary will provider the best auto-discovery out of the box, especially if you have multiple networks visible at the run location.  Using the Docker methods will most likely require that you manually add on or more of your networks to Mason.
 
 ### OS binary
 
@@ -81,7 +85,7 @@ docker run \
     * Traceroute
     * SNMP
     * DNS Checks
-    * TCP Port Scaning
+    * TCP Port Scanning
     * TLS certificate information
 - Default configuration designed to be productive on the initial run
 - Core tools are additional exposed via command line and as network services
@@ -101,7 +105,7 @@ docker run \
 - Use IP/ASN data from [https://github.com/sapics](https://github.com/sapics/ip-location-db/) to find Network/Country data
     * Enable usage with __--asn.enabled=true__
 - IPFIX/Netflow listener to record in/out traffic flows of devices
-    * See flows grouped by Network Organaization, Country, and IP
+    * See flows grouped by network organization, country, and IP
 
 ## Screenshots
 
@@ -252,6 +256,6 @@ The nettools package contains the basic network tools so you can build your own 
 - DNS resolution
 - Send and receive ICMP4 Echo requests
 - TCP Port scanning for a target
-- SNMP information retrival
-- TLS certiicate fetching and details parsing
+- SNMP information retrieval
+- TLS certificate fetching and details parsing
 - Traceroute using ICMP4 to a target
