@@ -13,8 +13,8 @@ permissions:
   id-token: write
 
 env:
-  IMAGE_REGISTRY: ghcr.io/networkables
-  IMAGE_NAME: mason
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -34,7 +34,7 @@ jobs:
       - uses: ko-build/setup-ko@v0.6
       - id: build # id cannot be omitted.
         run: |
-          export VERSION=v0.0.0
+          export VERSION=$(git describe --tags --always --dirty | cut -c2-)" >> "$GITHUB_OUTPUT"
           ko build -v -B --sbom=none --tags=latest --tags=${VERSION} --image-refs .digest ./
           image=$(sed '1q;d' .digest | cut -d'@' -f1 | cut -d':' -f1)
           digest=$(sed '1q;d' .digest | cut -d'@' -f2)
@@ -44,7 +44,7 @@ jobs:
 
   provenance:
     needs: build
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.10.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
     with:
       image: ${{ needs.build.outputs.image }}
       digest: ${{ needs.build.outputs.digest }}
