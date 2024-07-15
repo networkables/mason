@@ -47,8 +47,8 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
-github.com/go-echarts/go-echarts/v2 v2.4.0-rc1 h1:PqvEP1m0X4LNWZnshwDn/UK2K1Zgaygn3hBrebDzFVQ=
-github.com/go-echarts/go-echarts/v2 v2.4.0-rc1/go.mod h1:56YlvzhW/a+du15f3S2qUGNDfKnFOeJSThBIrVFHDtI=
+github.com/go-echarts/go-echarts/v2 v2.4.0 h1:efD46dmAvaZEWrBHAGjE8cfDK48vvFTHz5N9VqW5rYc=
+github.com/go-echarts/go-echarts/v2 v2.4.0/go.mod h1:56YlvzhW/a+du15f3S2qUGNDfKnFOeJSThBIrVFHDtI=
 github.com/go-graphite/go-whisper v0.0.0-20230526115116-e3110f57c01c h1:Edc/U64p3BAlAm/V8WLjEwK4WxC2eq1FOyLw3yO99zg=
 github.com/go-graphite/go-whisper v0.0.0-20230526115116-e3110f57c01c/go.mod h1:1edRhfqJoiHSjN72nYptHK0YR4yYt8aPC4NRHWhT0XE=
 github.com/go-logfmt/logfmt v0.6.0 h1:wGYYu3uicYdqXVgoYbvnkrPVXkuLM1p1ifugDMEdRi4=
