@@ -34,7 +34,7 @@ jobs:
       - uses: ko-build/setup-ko@v0.6
       - id: build # id cannot be omitted.
         run: |
-          export VERSION=$(git describe --tags --always --dirty | cut -c2-)" >> "$GITHUB_OUTPUT"
+          export VERSION=$(git describe --tags --always --dirty | cut -c2-)
           ko build -v -B --sbom=none --tags=latest --tags=${VERSION} --image-refs .digest ./
           image=$(sed '1q;d' .digest | cut -d'@' -f1 | cut -d':' -f1)
           digest=$(sed '1q;d' .digest | cut -d'@' -f2)
