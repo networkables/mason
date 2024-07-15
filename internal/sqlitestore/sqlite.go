@@ -104,10 +104,10 @@ func newSqliteDatabase(cfg *Config) *Store {
 
 	var url string
 
-	ensureDirectory(cfg.Directory)
 	if cfg.Filename != "" {
 		// url = "file:"
 		if cfg.Directory != "" {
+			ensureDirectory(cfg.Directory)
 			url += cfg.Directory + "/"
 		}
 		url += cfg.Filename
