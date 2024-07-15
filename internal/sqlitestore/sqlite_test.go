@@ -5,7 +5,7 @@
 package sqlitestore
 
 import (
-	"context"
+	"os"
 	"testing"
 	"time"
 )
@@ -13,10 +13,13 @@ import (
 func createTestDatabase(t *testing.T) *Store {
 	t.Helper()
 
+	os.Remove("unittest.db")
+	os.Remove("unittest.db-shm")
+	os.Remove("unittest.db-wal")
 	db, err := New(&Config{
 		Enabled:               true,
 		Directory:             "",
-		Filename:              ":memory:",
+		Filename:              "unittest.db",
 		URL:                   "",
 		MaxOpenConnections:    1,
 		MaxIdleConnections:    1,
@@ -27,9 +30,13 @@ func createTestDatabase(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 
-	if err := db.MigrateUp(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
 	return db
+}
+
+func removeTestDatabase(t *testing.T) {
+	t.Helper()
+
+	os.Remove("unittest.db")
+	os.Remove("unittest.db-shm")
+	os.Remove("unittest.db-wal")
 }

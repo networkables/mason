@@ -21,9 +21,10 @@ Right now using the OS binary will provider the best auto-discovery out of the b
 ### OS binary
 
 1. Download pre-built binary [here](https://github.com/networkables/mason/releases)
-2. Grant admin network permissions to the binary (instead of running mason as root): `sudo ./mason sys setcap`
-3. Start Mason as a server: `./mason server`
-4. Open your browser at http://localhost:4380/
+2. Start Mason as a server: `./mason server`
+3. Open your browser at http://localhost:4380/
+
+__TIP__ If running on Linux and enabled options which require net admin privileges, grant admin network permissions to the binary (instead of running mason as root): `sudo ./mason sys setcap`
 
 ### Docker
 
@@ -44,8 +45,6 @@ docker run \
 
 ```
 mkdir -p mason/data mason/config
-chmod 0775 mason/data mason/config
-sudo chgrp 65532 mason/data mason/config
 docker run \
   --name mason \
   --rm \
@@ -54,8 +53,8 @@ docker run \
   -p "4380:4380" \
   -p "4322:4322" \
   -p "2055:2055/udp" \
-  -v ./mason/data:/home/nonroot/data \
-  -v ./mason/config:/home/nonroot/config \
+  -v ./mason/data:/data \
+  -v ./mason/config:/config \
   ghcr.io/networkables/mason server
 ```
 
@@ -71,8 +70,8 @@ docker run \
   -p "4380:4380" \
   -p "4322:4322" \
   -p "2055:2055/udp" \
-  -v ./mason/data:/home/nonroot/data \
-  -v ./mason/config:/home/nonroot/config \
+  -v ./mason/data:/data \
+  -v ./mason/config:/config \
   ghcr.io/networkables/mason server --asn.enabled=true --oui.enabled=true --discovery.icmp.privileged=true
 ```
 

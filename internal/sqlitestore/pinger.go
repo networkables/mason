@@ -8,8 +8,6 @@ import (
 	"context"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/internal/pinger"
 	"github.com/networkables/mason/nettools"
@@ -48,16 +46,38 @@ func (cs *Store) selectPerformancePings(
 	addr model.Addr,
 	from time.Time,
 ) (points []pinger.Point, err error) {
-	err = cs.DB.SelectContext(
-		ctx,
-		&points,
+	stmt, err := cs.DB.Prepare(
 		`select 
       start, minimum, average, maximum, loss
     from performancepings
-    where addr = ? and start > ?`,
-		addr,
-		from,
-	)
+    where addr = :addr and start > :start`)
+	if err != nil {
+		return points, err
+	}
+	stmt.SetText(":addr", addr.String())
+	stmt.SetText(":start", from.Format(time.RFC3339Nano))
+
+	var hasRow bool
+	for {
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return points, err
+		}
+		if !hasRow {
+			break
+		}
+
+		p := pinger.Point{
+			Minimum: time.Duration(stmt.GetInt64("minimum")),
+			Average: time.Duration(stmt.GetInt64("average")),
+			Maximum: time.Duration(stmt.GetInt64("maximum")),
+			Loss:    stmt.GetFloat("loss"),
+		}
+		p.Start, err = time.Parse(time.RFC3339Nano, stmt.GetText("start"))
+
+		points = append(points, p)
+	}
+
 	return points, err
 }
 
@@ -67,11 +87,20 @@ func (cs *Store) insertPerformancePing(
 	addr model.Addr,
 	p nettools.Icmp4EchoResponseStatistics,
 ) (err error) {
-	_, err = cs.DB.ExecContext(
-		ctx,
+	stmt, err := cs.DB.Prepare(
 		`insert into performancepings (start, addr, minimum, average, maximum, loss)
-    values (?, ?, ?, ?, ?, ?)`,
-		ts, addr, p.Minimum, p.Mean, p.Maximum, p.PacketLoss,
-	)
+    values (:start, :addr, :minimum, :average, :maximum, :loss)`)
+	if err != nil {
+		return err
+	}
+	stmt.SetText(":start", ts.Format(time.RFC3339Nano))
+	stmt.SetText(":addr", addr.String())
+	stmt.SetInt64(":minimum", p.Minimum.Nanoseconds())
+	stmt.SetInt64(":average", p.Mean.Nanoseconds())
+	stmt.SetInt64(":maximum", p.Maximum.Nanoseconds())
+	stmt.SetFloat(":loss", p.PacketLoss)
+
+	_, err = stmt.Step()
+
 	return err
 }

@@ -36,6 +36,10 @@ func TestSqliteStore_WritePerformancePing(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err = db.WritePerformancePing(
 		ctx,
 		ts,

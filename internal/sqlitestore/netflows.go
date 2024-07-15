@@ -6,8 +6,9 @@ package sqlitestore
 
 import (
 	"context"
-
-	_ "github.com/mattn/go-sqlite3"
+	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/networkables/mason/internal/model"
 )
@@ -31,28 +32,80 @@ func (cs *Store) GetNetflows(
 }
 
 func (cs *Store) insertNetflow(ctx context.Context, n model.IpFlow) error {
-	_, err := cs.DB.NamedExecContext(
-		ctx,
-		`insert into flows (start, end, srcaddr, srcport, srcasn, dstaddr, dstport, dstasn, protocol, bytes, packets)
-    values (:start, :end, :srcaddr, :srcport, :srcasn, :dstaddr, :dstport, :dstasn, :protocol, :bytes, :packets)
+	stmt, err := cs.DB.Prepare(
+		`INSERT INTO flows (start, end, srcaddr, srcport, srcasn, dstaddr, dstport, dstasn, protocol, bytes, packets)
+    VALUES (:start, :end, :srcaddr, :srcport, :srcasn, :dstaddr, :dstport, :dstasn, :protocol, :bytes, :packets)
 		`,
-		n,
 	)
+	if err != nil {
+		return err
+	}
+	stmt.SetText(":start", n.Start.Format(time.RFC3339Nano))
+	stmt.SetText(":end", n.End.Format(time.RFC3339Nano))
+	stmt.SetText(":srcaddr", n.SrcAddr.String())
+	stmt.SetInt64(":srcport", int64(n.SrcPort))
+	stmt.SetText(":srcasn", n.SrcASN)
+	stmt.SetText(":dstaddr", n.DstAddr.String())
+	stmt.SetInt64(":dstport", int64(n.DstPort))
+	stmt.SetText(":dstasn", n.DstASN)
+	stmt.SetText(":protocol", n.Protocol.String())
+	stmt.SetInt64(":bytes", int64(n.Bytes))
+	stmt.SetInt64(":packets", int64(n.Packets))
+	_, err = stmt.Step()
 	return err
 }
 
 func (cs *Store) selectNetflow(
 	ctx context.Context,
 	addr model.Addr,
-) ([]model.IpFlow, error) {
-	var fs []model.IpFlow
-	err := cs.DB.SelectContext(
-		ctx,
-		&fs,
-		`select start, end, srcaddr, srcport, srcasn, dstaddr, dstport, dstasn, protocol, bytes, packets from flows where srcaddr = ? or dstaddr = ?`,
-		addr,
-		addr,
+) (fs []model.IpFlow, err error) {
+	stmt, err := cs.DB.Prepare(
+		`SELECT start, end, srcaddr, srcport, srcasn, dstaddr, dstport, dstasn, protocol, bytes, packets
+     FROM flows 
+    WHERE srcaddr = :srcaddr OR dstaddr = :dstaddr`,
 	)
+	var hasRow bool
+	for {
+		fmt.Println("device")
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return fs, err
+		}
+		if !hasRow {
+			break
+		}
+		flow := model.IpFlow{
+			SrcPort: uint16(stmt.GetInt64("srcport")),
+			SrcASN:  stmt.GetText("srcasn"),
+			DstPort: uint16(stmt.GetInt64("dstport")),
+			DstASN:  stmt.GetText("dstasn"),
+			Bytes:   int(stmt.GetInt64("bytes")),
+			Packets: int(stmt.GetInt64("packets")),
+		}
+		flow.Start, err = time.Parse(time.RFC3339Nano, stmt.GetText("start"))
+		if err != nil {
+			return fs, err
+		}
+		flow.End, err = time.Parse(time.RFC3339Nano, stmt.GetText("end"))
+		if err != nil {
+			return fs, err
+		}
+		err = flow.SrcAddr.Scan(stmt.GetText("srcaddr"))
+		if err != nil {
+			return fs, err
+		}
+		err = flow.DstAddr.Scan(stmt.GetText("dstaddr"))
+		if err != nil {
+			return fs, err
+		}
+		p, err := strconv.Atoi(stmt.GetText("protocol"))
+		if err != nil {
+			return fs, err
+		}
+		flow.Protocol = model.Protocol(p)
+
+		fs = append(fs, flow)
+	}
 	return fs, err
 }
 
@@ -67,46 +120,68 @@ func (cs *Store) selectNetflowsSummaryByIP(
 	ctx context.Context,
 	addr model.Addr,
 ) (fs []model.FlowSummaryForAddrByIP, err error) {
-	err = cs.DB.SelectContext(
-		ctx,
-		&fs,
-		`select country,
+	stmt, err := cs.DB.Prepare(
+		`SELECT country,
             name,
             asn,
             addr,
-            ifnull(recvbytes,0) as recvbytes,
-            ifnull(xmitbytes,0) as xmitbytes
-       from (
-            select asns.country,
+            ifnull(recvbytes,0) AS recvbytes,
+            ifnull(xmitbytes,0) AS xmitbytes
+       FROM (
+            SELECT asns.country,
                    asns.name,
                    asns.asn,
                    dat.addr,
-                   sum(case when flowdirection = 0 then bytes end) as recvbytes,
-                   sum(case when flowdirection = 1 then bytes end) as xmitbytes
-              from (
-                   select 0 as flowdirection,
-                          srcasn as asn,
-                          srcaddr as addr,
+                   SUM(CASE WHEN flowdirection = 0 THEN bytes END) AS recvbytes,
+                   SUM(CASE WHEN flowdirection = 1 THEN bytes END) AS xmitbytes
+              FROM (
+                   SELECT 0 AS flowdirection,
+                          srcasn AS asn,
+                          srcaddr AS addr,
                           bytes
-                     from flows
-                    where dstaddr = ?
+                     FROM flows
+                    WHERE dstaddr = :addr
                     --and start > datetime('now','-60 minute')
-                    union
-                   select 1 as flowdirection,
-                          dstasn as asn,
-                          dstaddr as addr,
+                    UNION
+                   SELECT 1 AS flowdirection,
+                          dstasn AS asn,
+                          dstaddr AS addr,
                           bytes
-                     from flows
-                    where srcaddr = ?
+                     FROM flows
+                    WHERE srcaddr = :addr
                     --and start > datetime('now','-60 minute')
                    ) dat, 
                    asns
-              where dat.asn = asns.asn
-             group by asns.country, asns.name, asns.asn, dat.addr
-             order by sum(bytes) desc
-            )`,
-		addr,
-		addr,
-	)
+              WHERE dat.asn = asns.asn
+             GROUP BY asns.country, asns.name, asns.asn, dat.addr
+             ORDER BY SUM(bytes) DESC
+            )`)
+	if err != nil {
+		return fs, err
+	}
+	stmt.SetText(":addr", addr.String())
+	var hasRow bool
+	for {
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return fs, err
+		}
+		if !hasRow {
+			break
+		}
+		f := model.FlowSummaryForAddrByIP{
+			Country:   stmt.GetText("country"),
+			Name:      stmt.GetText("name"),
+			Asn:       stmt.GetText("asn"),
+			RecvBytes: int(stmt.GetInt64("recvbytes")),
+			XmitBytes: int(stmt.GetInt64("xmitbytes")),
+		}
+		err = f.Addr.Scan(stmt.GetText("addr"))
+		if err != nil {
+			return fs, err
+		}
+
+		fs = append(fs, f)
+	}
 	return fs, err
 }

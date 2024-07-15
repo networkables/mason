@@ -110,10 +110,6 @@ func startMason(ctx context.Context, cfg *server.Config) (*server.Mason, error) 
 		if err != nil {
 			return nil, err
 		}
-		err = sqls.MigrateUp(ctx)
-		if err != nil {
-			return nil, err
-		}
 		store = sqls
 		flowstore = sqls
 	}

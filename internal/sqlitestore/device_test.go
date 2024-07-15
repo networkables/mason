@@ -140,6 +140,10 @@ func TestSqliteStore_AddDevice(t *testing.T) {
 
 	for name, tc := range tests {
 		db := createTestDatabase(t)
+		defer func() {
+			db.Close()
+			removeTestDatabase(t)
+		}()
 		err = db.AddDevice(ctx, tc.input)
 		if err != nil {
 			t.Fatal(err)
@@ -182,6 +186,10 @@ func TestSqliteStore_AddExistingDevice(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err = db.AddDevice(ctx,
 		model.Device{
 			Name:         "basic",
@@ -258,6 +266,10 @@ func TestSqliteStore_UpdateDevice(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 
 	err = db.AddDevice(ctx,
 		model.Device{
@@ -302,6 +314,10 @@ func TestSqliteStore_UpdateDeviceSkipNonUpdated(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 
 	err = db.AddDevice(ctx,
 		model.Device{
@@ -337,6 +353,10 @@ func TestSqliteStore_GetFilteredDevices(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddDevice(ctx, model.Device{
 		Name: "dev0",
 		Addr: model.MustParseAddr("192.168.0.0"),
@@ -381,6 +401,10 @@ func TestSqliteStore_DeviceListAndCount(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddDevice(ctx, model.Device{
 		Name: "dev1",
 		Addr: model.MustParseAddr("192.168.0.1"),
@@ -411,6 +435,10 @@ func TestSqliteStore_GetDeviceByAddr(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddDevice(ctx, model.Device{
 		Name: "basic",
 		Addr: model.MustParseAddr("192.168.0.1"),
@@ -448,6 +476,10 @@ func TestSqliteStore_RemoveDeviceByAddr(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddDevice(ctx, model.Device{
 		Name: "basic",
 		Addr: model.MustParseAddr("192.168.0.1"),

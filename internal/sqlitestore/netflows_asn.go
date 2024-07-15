@@ -30,9 +30,7 @@ func (cs *Store) selectNetflowsSummaryByName(
 	ctx context.Context,
 	addr model.Addr,
 ) (fs []model.FlowSummaryForAddrByName, err error) {
-	err = cs.DB.SelectContext(
-		ctx,
-		&fs,
+	stmt, err := cs.DB.Prepare(
 		`select name,
             ifnull(recvbytes,0) as recvbytes,
             ifnull(xmitbytes,0) as xmitbytes
@@ -49,14 +47,14 @@ func (cs *Store) selectNetflowsSummaryByName(
                                   srcasn as asn,
                                   bytes
                              from flows
-                            where dstaddr = ?
+                            where dstaddr = :addr
                             --and start > datetime('now','-60 minute')
                             union
                            select 1 as flowdirection,
                                   dstasn as asn,
                                   bytes
                              from flows
-                            where srcaddr = ?
+                            where srcaddr = :addr
                             --and start > datetime('now','-60 minute')
                            ) dat,
                            asns
@@ -64,10 +62,28 @@ func (cs *Store) selectNetflowsSummaryByName(
                    )
           group by name
           order by sum(bytes) desc
-    )`,
-		addr,
-		addr,
-	)
+    )`)
+	if err != nil {
+		return fs, err
+	}
+	stmt.SetText(":addr", addr.String())
+	var hasRow bool
+	for {
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return fs, err
+		}
+		if !hasRow {
+			break
+		}
+		f := model.FlowSummaryForAddrByName{
+			Name:      stmt.GetText("name"),
+			RecvBytes: int(stmt.GetInt64("recvbytes")),
+			XmitBytes: int(stmt.GetInt64("xmitbytes")),
+		}
+
+		fs = append(fs, f)
+	}
 	return fs, err
 }
 
@@ -75,9 +91,7 @@ func (cs *Store) selectNetflowsSummaryByCountry(
 	ctx context.Context,
 	addr model.Addr,
 ) (fs []model.FlowSummaryForAddrByCountry, err error) {
-	err = cs.DB.SelectContext(
-		ctx,
-		&fs,
+	stmt, err := cs.DB.Prepare(
 		`select country,
             name, 
             ifnull(recvbytes,0) as recvbytes,
@@ -112,9 +126,28 @@ func (cs *Store) selectNetflowsSummaryByCountry(
                    )
           group by country, name
           order by sum(bytes) desc
-    )`,
-		addr,
-		addr,
-	)
+    )`)
+	if err != nil {
+		return fs, err
+	}
+	stmt.SetText(":addr", addr.String())
+	var hasRow bool
+	for {
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return fs, err
+		}
+		if !hasRow {
+			break
+		}
+		f := model.FlowSummaryForAddrByCountry{
+			Country:   stmt.GetText("country"),
+			Name:      stmt.GetText("name"),
+			RecvBytes: int(stmt.GetInt64("recvbytes")),
+			XmitBytes: int(stmt.GetInt64("xmitbytes")),
+		}
+
+		fs = append(fs, f)
+	}
 	return fs, err
 }

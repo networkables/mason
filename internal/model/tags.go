@@ -7,9 +7,20 @@ package model
 import (
 	"database/sql/driver"
 	"encoding/json"
+
+	"github.com/charmbracelet/log"
 )
 
 type Tags []Tag
+
+func (ts Tags) String() string {
+	v, err := ts.Value()
+	if err != nil {
+		log.Error("tags.String", "error", err)
+		return ""
+	}
+	return v.(string)
+}
 
 func (ts Tags) Value() (driver.Value, error) {
 	if len(ts) == 0 {
