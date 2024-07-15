@@ -23,10 +23,6 @@ goarch: amd64
 # (Optional) Working directory. (default: root of the project)
 # dir: ./relative/path/to/dir
 
-# Binary output name.
-# {{ .Os }} will be replaced by goos field in the config file.
-# {{ .Arch }} will be replaced by goarch field in the config file.
-#binary: mason-{{ .Os }}-{{ .Arch }}
 binary: mason-{{ .Os }}-{{ .Arch }}
 
 # (Optional) ldflags generated dynamically in the workflow, and set as the `evaluated-envs` input variables in the workflow.

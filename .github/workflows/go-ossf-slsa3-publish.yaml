@@ -31,6 +31,7 @@ jobs:
       version: ${{ steps.ldflags.outputs.version }}
       tree-state: ${{ steps.ldflags.outputs.tree-state }}
     steps:
+      - run: git config --global core.autocrlf false
       - id: checkout
         uses: actions/checkout@v4
         with:
