@@ -97,7 +97,7 @@ jobs:
   scan:
     name: scanning
     runs-on: ubuntu-latest
-    needs: linuxbuild, macosbuild
+    needs: [linuxbuild, macosbuild]
     steps:
       - name: Scan container
         uses: aquasecurity/trivy-action@0.21.0
