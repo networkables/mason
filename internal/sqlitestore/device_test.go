@@ -140,10 +140,6 @@ func TestSqliteStore_AddDevice(t *testing.T) {
 
 	for name, tc := range tests {
 		db := createTestDatabase(t)
-		defer func() {
-			db.Close()
-			removeTestDatabase(t)
-		}()
 		err = db.AddDevice(ctx, tc.input)
 		if err != nil {
 			t.Fatal(err)
@@ -156,6 +152,8 @@ func TestSqliteStore_AddDevice(t *testing.T) {
 		if diff != "" {
 			t.Errorf("%s mismatch (-want +got):\n%s", name, diff)
 		}
+		db.Close()
+		removeTestDatabase(t)
 	}
 }
 

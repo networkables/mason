@@ -10,15 +10,21 @@ import (
 	"time"
 )
 
+var testdbdir string
+
 func createTestDatabase(t *testing.T) *Store {
 	t.Helper()
+	var err error
 
-	os.Remove("unittest.db")
-	os.Remove("unittest.db-shm")
-	os.Remove("unittest.db-wal")
+	testdbdir, err = os.MkdirTemp("", "dbt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// t.Logf("ctd: %s", testdbdir)
+
 	db, err := New(&Config{
 		Enabled:               true,
-		Directory:             "",
+		Directory:             testdbdir,
 		Filename:              "unittest.db",
 		URL:                   "",
 		MaxOpenConnections:    1,
@@ -36,7 +42,9 @@ func createTestDatabase(t *testing.T) *Store {
 func removeTestDatabase(t *testing.T) {
 	t.Helper()
 
-	os.Remove("unittest.db")
-	os.Remove("unittest.db-shm")
-	os.Remove("unittest.db-wal")
+	// t.Logf("rtd: %s", testdbdir)
+	err := os.RemoveAll(testdbdir)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
