@@ -63,6 +63,10 @@ func TestSqliteStore_UpsertNetwork(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 
 	for name, tc := range tests {
 		err = db.UpsertNetwork(ctx, tc.input)
@@ -124,6 +128,10 @@ func TestSqliteStore_AddNetwork(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 
 	for name, tc := range tests {
 		err = db.AddNetwork(ctx, tc.input)
@@ -196,6 +204,10 @@ func TestSqliteStore_UpdateNetwork(t *testing.T) {
 	}
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 
 	err = db.AddNetwork(ctx,
 		model.Network{
@@ -241,6 +253,10 @@ func TestSqliteStore_GetFilteredNetworks(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddNetwork(ctx, model.Network{
 		Name:   "net0",
 		Prefix: model.MustParsePrefix("192.168.0.0/24"),
@@ -287,6 +303,10 @@ func TestSqliteStore_NetworkListAndCount(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddNetwork(ctx, model.Network{
 		Name:   "net1",
 		Prefix: model.MustParsePrefix("192.168.0.0/24"),
@@ -318,6 +338,10 @@ func TestSqliteStore_GetNetworkByName(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddNetwork(ctx, model.Network{
 		Name:   "basic",
 		Prefix: model.MustParsePrefix("192.168.0.0/24"),
@@ -357,6 +381,10 @@ func TestSqliteStore_RemoveNetworkByName(t *testing.T) {
 	ctx := context.Background()
 
 	db := createTestDatabase(t)
+	defer func() {
+		db.Close()
+		removeTestDatabase(t)
+	}()
 	err := db.AddNetwork(ctx, model.Network{
 		Name:   "basic",
 		Prefix: model.MustParsePrefix("192.168.0.0/24"),

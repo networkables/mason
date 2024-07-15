@@ -7,8 +7,6 @@ package sqlitestore
 import (
 	"context"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/networkables/mason/internal/model"
 )
 
@@ -17,13 +15,19 @@ func (cs *Store) UpsertAsn(ctx context.Context, asn model.Asn) error {
 }
 
 func (cs *Store) upsertAsn(ctx context.Context, asn model.Asn) error {
-	_, err := cs.DB.NamedExecContext(
-		ctx,
-		`insert into asns (asn, country, name, iprange, created)
-    values (:asn, :country, :name, :iprange, datetime('now'))
-    on conflict (asn) do update set country=:country, name=:name, iprange=:iprange, created=datetime('now')`,
-		asn,
+	stmt, err := cs.DB.Prepare(
+		`INSERT INTO asns (asn, country, name, iprange, created)
+    VALUES (:asn, :country, :name, :iprange, datetime('now'))
+    ON CONFLICT (asn) DO UPDATE SET country=:country, name=:name, iprange=:iprange, created=datetime('now')`,
 	)
+	if err != nil {
+		return err
+	}
+	stmt.SetText(":asn", asn.Asn)
+	stmt.SetText(":country", asn.Country)
+	stmt.SetText(":name", asn.Name)
+	stmt.SetText(":iprange", asn.IPRange.String())
+	_, err = stmt.Step()
 	return err
 }
 
@@ -32,18 +36,26 @@ func (cs *Store) GetAsn(ctx context.Context, asn string) (am model.Asn, err erro
 }
 
 func (cs *Store) selectAsn(ctx context.Context, asn string) (am model.Asn, err error) {
-	var res []model.Asn
-	err = cs.DB.SelectContext(
-		ctx,
-		&res,
-		`select asn, country, name, iprange from asns where asn = ? limit 1`,
-		asn,
+	stmt, err := cs.DB.Prepare(
+		"SELECT asn, country, name, iprange FROM asns WHERE asn = :asn LIMIT 1",
 	)
 	if err != nil {
 		return am, err
 	}
-	if len(res) > 0 {
-		return res[0], nil
+	stmt.SetText(":asn", asn)
+	hasRow, err := stmt.Step()
+	if err != nil {
+		return am, err
 	}
-	return model.Asn{}, nil
+	if !hasRow {
+		return am, err
+	}
+	am.Asn = stmt.GetText("asn")
+	am.Country = stmt.GetText("country")
+	am.Name = stmt.GetText("name")
+	err = am.IPRange.Scan(stmt.GetText("iprange"))
+	if err != nil {
+		return am, err
+	}
+	return am, nil
 }

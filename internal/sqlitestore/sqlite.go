@@ -6,29 +6,21 @@ package sqlitestore
 
 import (
 	"context"
-	"embed"
 	"errors"
-	"io/fs"
 	"os"
-	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/jmoiron/sqlx"
-	"github.com/maragudk/migrate"
-	_ "github.com/mattn/go-sqlite3"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitemigration"
+	"zombiezen.com/go/sqlite/sqlitex"
 
 	"github.com/networkables/mason/internal/model"
 )
 
 type Store struct {
-	DB                    *sqlx.DB
-	url                   string
-	maxOpenConnections    int
-	maxIdleConnections    int
-	connectionMaxLifetime time.Duration
-	connectionMaxIdleTime time.Duration
-	log                   *log.Logger
-	// --- old elow
+	DB   *sqlite.Conn
+	Pool *sqlitemigration.Pool
+	url  string
 
 	directory string
 	filename  string
@@ -37,53 +29,115 @@ type Store struct {
 }
 
 func newSqliteDatabase(cfg *Config) *Store {
+	schema := sqlitemigration.Schema{
+		Migrations: []string{
+			`create table devices (
+  addr text primary key,
+  name text,
+  mac text,
+  discoveredat timestamp,
+  discoveredby text,
+  -- Meta
+  metadnsname text,
+  metamanufacturer text,
+  metatags text,
+  -- Server
+  serverports text,
+  serverlastscan timestamp,
+  -- PerfPing
+  perfpingfirstseen timestamp,
+  perfpinglastseen timestamp,
+  perfpingmeanping integer,
+  perfpingmaxping integer,
+  perfpinglastfailed integer,
+  -- Snmp
+  snmpname text,
+  snmpdescription text,
+  snmpcommunity text,
+  snmpport integer,
+  snmplastcheck timestamp,
+  snmphasarptable text,
+  snmplastarptablescan timestamp,
+  snmphasinterfaces text,
+  snmplastinterfacesscan timestamp
+);`,
+
+			`create table networks (
+  prefix text primary key,
+  name string,
+  lastscan timestamp,
+  tags text
+);`,
+
+			`create table flows (
+  start timestamp,
+  end timestamp,
+  srcaddr text,
+  srcport integer,
+  srcasn text,
+  dstaddr text,
+  dstport integer,
+  dstasn text,
+  protocol text,
+  bytes integer,
+  packets integer
+);`,
+
+			`create table performancepings (
+  start timestamp,
+  addr text,
+  minimum integer,
+  average integer,
+  maximum integer,
+  loss float
+);`,
+
+			`create table asns (
+  asn text primary key,
+  country text,
+  name text,
+  iprange text,
+  created timestamp
+);`,
+		},
+	}
+
 	var url string
 
 	ensureDirectory(cfg.Directory)
 	if cfg.Filename != "" {
-		url = "file:"
+		// url = "file:"
 		if cfg.Directory != "" {
 			url += cfg.Directory + "/"
 		}
 		url += cfg.Filename
 	}
+	url += cfg.URL
 
-	// if opts.Log == nil {
-	// 	opts.Log = log.New(io.Discard, "", 0)
-	// }
+	pool := sqlitemigration.NewPool(url, schema, sqlitemigration.Options{
+		Flags:    sqlite.OpenCreate | sqlite.OpenReadWrite | sqlite.OpenWAL,
+		PoolSize: cfg.MaxOpenConnections,
+		PrepareConn: func(conn *sqlite.Conn) error {
+			return sqlitex.ExecuteTransient(conn, "PRAGMA foreign_keys = ON;", nil)
+		},
+		OnError: func(err error) {
+			log.Error("sqlitepool", "error", err)
+		},
+	})
 
-	// - Set WAL mode (not strictly necessary each time because it's persisted in the database, but good for first run)
-	// - Set busy timeout, so concurrent writers wait on each other instead of erroring immediately
-	// - Enable foreign key checks
-	url += cfg.URL + "?_journal=WAL&_timeout=5000&_fk=true"
+	// TODO: Need a better solution for using the pool
+	conn, err := pool.Get(context.TODO())
+	if err != nil {
+		log.Fatal("pool get conn", "error", err)
+	}
 
 	cs := &Store{
-		url:                   url,
-		filename:              cfg.Filename,
-		maxOpenConnections:    cfg.MaxOpenConnections,
-		maxIdleConnections:    cfg.MaxIdleConnections,
-		connectionMaxLifetime: cfg.ConnectionMaxLifetime,
-		connectionMaxIdleTime: cfg.ConnectionMaxIdle,
+		url:      url,
+		filename: cfg.Filename,
+		Pool:     pool,
+		DB:       conn,
 	}
 	return cs
-}
-
-func (d *Store) connect() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var err error
-	d.DB, err = sqlx.ConnectContext(ctx, "sqlite3", d.url)
-	if err != nil {
-		return err
-	}
-
-	d.DB.SetMaxOpenConns(d.maxOpenConnections)
-	d.DB.SetMaxIdleConns(d.maxIdleConnections)
-	d.DB.SetConnMaxLifetime(d.connectionMaxLifetime)
-	d.DB.SetConnMaxIdleTime(d.connectionMaxIdleTime)
-
-	return nil
 }
 
 func New(cfg *Config) (*Store, error) {
@@ -91,12 +145,7 @@ func New(cfg *Config) (*Store, error) {
 
 	cs := newSqliteDatabase(cfg)
 
-	err := cs.connect()
-	if err != nil {
-		return nil, err
-	}
-
-	err = cs.readNetworksInitial(ctx)
+	err := cs.readNetworksInitial(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +158,8 @@ func New(cfg *Config) (*Store, error) {
 }
 
 func (cs *Store) Close() error {
-	return cs.DB.Close()
+	cs.Pool.Put(cs.DB)
+	return cs.Pool.Close()
 }
 
 func ensureDirectory(dir string) {
@@ -131,25 +181,4 @@ func ensureDirectory(dir string) {
 		return
 	}
 	log.Fatal("not a directory", "dir", dir)
-}
-
-//go:embed migrations
-var migrations embed.FS
-
-func (cs *Store) MigrateUp(ctx context.Context) error {
-	fsys := cs.getMigrations()
-	return migrate.Up(ctx, cs.DB.DB, fsys)
-}
-
-func (cs *Store) MigrateDown(ctx context.Context) error {
-	fsys := cs.getMigrations()
-	return migrate.Down(ctx, cs.DB.DB, fsys)
-}
-
-func (cs *Store) getMigrations() fs.FS {
-	fsys, err := fs.Sub(migrations, "migrations")
-	if err != nil {
-		panic(err)
-	}
-	return fsys
 }

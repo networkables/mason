@@ -8,6 +8,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -55,13 +56,20 @@ func (cs *Store) UpdateNetwork(ctx context.Context, newnetwork model.Network) er
 
 // UpsertNetwork will either add the given network and if it already exists then it will run an update
 func (cs *Store) UpsertNetwork(ctx context.Context, n model.Network) error {
-	_, err := cs.DB.NamedExecContext(
-		ctx,
+	stmt, err := cs.DB.Prepare(
 		`insert into networks (prefix, name, lastscan, tags)
     values (:prefix, :name, :lastscan, :tags)
-    on conflict (prefix) do update set name=:name, lastscan=:lastscan, tags=:tags`,
-		n,
-	)
+    on conflict (prefix) do update set name=:name, lastscan=:lastscan, tags=:tags`)
+	if err != nil {
+		return err
+	}
+	stmt.SetText(":prefix", n.Prefix.String())
+	stmt.SetText(":name", n.Name)
+	stmt.SetText(":lastscan", n.LastScan.Format(time.RFC3339Nano))
+	stmt.SetText(":tags", n.Tags.String())
+
+	_, err = stmt.Step()
+
 	return err
 }
 
@@ -122,12 +130,39 @@ func (cs *Store) readNetworks(ctx context.Context) (err error) {
 	return err
 }
 
-func (cs *Store) selectNetworks(ctx context.Context) ([]model.Network, error) {
-	var fs []model.Network
-	err := cs.DB.SelectContext(
-		ctx,
-		&fs,
-		`select name, prefix, lastscan, tags from networks`,
-	)
+func (cs *Store) selectNetworks(ctx context.Context) (fs []model.Network, err error) {
+	stmt, err := cs.DB.Prepare(
+		`select name, prefix, lastscan, tags from networks`)
+	if err != nil {
+		return fs, err
+	}
+	var hasRow bool
+	for {
+		hasRow, err = stmt.Step()
+		if err != nil {
+			return fs, err
+		}
+		if !hasRow {
+			break
+		}
+		n := model.Network{
+			Name: stmt.GetText("name"),
+		}
+		err = n.Prefix.Scan(stmt.GetText("prefix"))
+		if err != nil {
+			return fs, err
+		}
+		n.LastScan, err = time.Parse(time.RFC3339Nano, stmt.GetText("lastscan"))
+		if err != nil {
+			return fs, err
+		}
+		err = n.Tags.Scan(stmt.GetText("scan"))
+		if err != nil {
+			return fs, err
+		}
+
+		fs = append(fs, n)
+	}
+
 	return fs, err
 }

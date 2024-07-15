@@ -61,7 +61,7 @@ func TestDevice_toString(t *testing.T) {
 	}{
 		"empty": {
 			input: Device{},
-			want:  "      invalid IP      [                  <>] fs:never ls:never tags:[]",
+			want:  "      invalid IP      [                  <>] fs:never ls:never tags:{}",
 		},
 		"filled": {
 			input: Device{
@@ -71,7 +71,7 @@ func TestDevice_toString(t *testing.T) {
 				Meta:            Meta{Manufacturer: "A Company"},
 				PerformancePing: Pinger{FirstSeen: firstseen, LastSeen: lastseen},
 			},
-			want: " name 192.168.1.1     [00:00:5e:00:53:01 <A Company>] fs:2011-01-01 00:00:00 ls:1h0m0s tags:[]",
+			want: " name 192.168.1.1     [00:00:5e:00:53:01 <A Company>] fs:2011-01-01 00:00:00 ls:1h0m0s tags:{}",
 		},
 	}
 

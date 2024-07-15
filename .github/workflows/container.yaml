@@ -1,0 +1,54 @@
+name: Container
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+
+permissions:
+  contents: read
+  packages: write
+  actions: write
+  id-token: write
+
+env:
+  IMAGE_REGISTRY: ghcr.io/networkables
+  IMAGE_NAME: mason
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          check-latest: true
+          go-version-file: ./go.mod
+      - uses: ko-build/setup-ko@v0.6
+      - id: build # id cannot be omitted.
+        run: |
+          export VERSION=v0.0.0
+          ko build -v -B --sbom=none --tags=latest --tags=${VERSION} --image-refs .digest ./
+          image=$(sed '1q;d' .digest | cut -d'@' -f1 | cut -d':' -f1)
+          digest=$(sed '1q;d' .digest | cut -d'@' -f2)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - run: cat .digest
+
+  provenance:
+    needs: build
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.10.0
+    with:
+      image: ${{ needs.build.outputs.image }}
+      digest: ${{ needs.build.outputs.digest }}
+      registry-username: ${{ github.actor }}
+      compile-generator: true
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
