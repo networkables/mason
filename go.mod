@@ -22,7 +22,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/miekg/dns v1.1.59
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	github.com/vishvananda/netlink v1.1.0
