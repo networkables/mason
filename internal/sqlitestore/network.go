@@ -6,6 +6,7 @@ package sqlitestore
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +54,16 @@ func (cs *Store) UpdateNetwork(ctx context.Context, newnetwork model.Network) er
 	}
 	cs.networks[idx] = newnetwork
 	return cs.saveNetworks(ctx)
+}
+
+func (cs *Store) UpsertNetwork(ctx context.Context, newnetwork model.Network) (err error) {
+	err = cs.AddNetwork(ctx, newnetwork)
+	if err != nil {
+		if errors.Is(err, model.ErrNetworkExists) {
+			return cs.UpdateNetwork(ctx, newnetwork)
+		}
+	}
+	return err
 }
 
 // upsertNetwork will either add the given network and if it already exists then it will run an update
