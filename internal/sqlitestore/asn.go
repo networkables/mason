@@ -7,8 +7,14 @@ package sqlitestore
 import (
 	"context"
 
+	"zombiezen.com/go/sqlite/sqlitex"
+
 	"github.com/networkables/mason/internal/model"
 )
+
+func (cs *Store) StartAsnLoad() func(*error) {
+	return sqlitex.Transaction(cs.DB)
+}
 
 func (cs *Store) UpsertAsn(ctx context.Context, asn model.Asn) error {
 	return cs.upsertAsn(ctx, asn)

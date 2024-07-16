@@ -109,7 +109,7 @@ func SetFlags(fs *pflag.FlagSet, cfg *Config) {
 		&cfg.Tui.KeyDirectory,
 		tuiConfigMajorKey,
 		"keydirectory",
-		"",
+		"data/ssh",
 		"directory to store ssh key, current directory if not specifed",
 	)
 }

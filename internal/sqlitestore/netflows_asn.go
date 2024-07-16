@@ -7,8 +7,6 @@ package sqlitestore
 import (
 	"context"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/networkables/mason/internal/model"
 )
 
@@ -111,14 +109,14 @@ func (cs *Store) selectNetflowsSummaryByCountry(
                                   srcasn as asn,
                                   bytes
                              from flows
-                            where dstaddr = ?
+                            where dstaddr = :addr
                             --and start > datetime('now','-60 minute')
                             union
                            select 1 as flowdirection,
                                   dstasn as asn,
                                   bytes
                              from flows
-                            where srcaddr = ?
+                            where srcaddr = :addr
                             --and start > datetime('now','-60 minute')
                            ) dat,
                            asns

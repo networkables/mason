@@ -28,7 +28,6 @@ type (
 		AddNetwork(context.Context, model.Network) error
 		RemoveNetworkByName(context.Context, string) error
 		UpdateNetwork(context.Context, model.Network) error
-		UpsertNetwork(context.Context, model.Network) error
 		GetNetworkByName(context.Context, string) (model.Network, error)
 		GetFilteredNetworks(context.Context, model.NetworkFilter) []model.Network
 		ListNetworks(context.Context) []model.Network
@@ -74,6 +73,7 @@ type (
 	}
 
 	AsnStorer interface {
+		StartAsnLoad() func(*error)
 		UpsertAsn(context.Context, model.Asn) error
 		GetAsn(context.Context, string) (model.Asn, error)
 	}

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 
 	"github.com/networkables/mason/internal/model"
 )
@@ -54,9 +55,9 @@ func (cs *Store) UpdateNetwork(ctx context.Context, newnetwork model.Network) er
 	return cs.saveNetworks(ctx)
 }
 
-// UpsertNetwork will either add the given network and if it already exists then it will run an update
-func (cs *Store) UpsertNetwork(ctx context.Context, n model.Network) error {
-	stmt, err := cs.DB.Prepare(
+// upsertNetwork will either add the given network and if it already exists then it will run an update
+func upsertNetwork(conn *sqlite.Conn, n model.Network) error {
+	stmt, err := conn.Prepare(
 		`insert into networks (prefix, name, lastscan, tags)
     values (:prefix, :name, :lastscan, :tags)
     on conflict (prefix) do update set name=:name, lastscan=:lastscan, tags=:tags`)
@@ -108,8 +109,17 @@ func (cs *Store) CountNetworks(ctx context.Context) int {
 }
 
 func (cs *Store) saveNetworks(ctx context.Context) (err error) {
+	conn, err := cs.Pool.Get(ctx)
+	if err != nil {
+		return err
+	}
+	fn := sqlitex.Transaction(conn)
+	defer func() {
+		fn(&err)
+		cs.Pool.Put(conn)
+	}()
 	for _, network := range cs.networks {
-		err = cs.UpsertNetwork(ctx, network)
+		err = upsertNetwork(conn, network)
 		if err != nil {
 			return err
 		}

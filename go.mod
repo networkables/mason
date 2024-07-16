@@ -17,7 +17,6 @@ require (
 	github.com/gosnmp/gosnmp v1.37.0
 	github.com/maragudk/gomponents v0.20.4
 	github.com/maragudk/gomponents-htmx v0.5.0
-	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/miekg/dns v1.1.61
 	github.com/spf13/cobra v1.8.1

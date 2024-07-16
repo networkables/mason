@@ -45,6 +45,7 @@ docker run \
 
 ```
 mkdir -p mason/data mason/config
+chmod 0777 mason/data
 docker run \
   --name mason \
   --rm \
