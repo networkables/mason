@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+
 	"github.com/networkables/mason/internal/model"
 )
 
@@ -91,8 +94,17 @@ func (cs *Store) CountDevices(ctx context.Context) int {
 }
 
 func (cs *Store) saveDevices(ctx context.Context) (err error) {
+	conn, err := cs.Pool.Get(ctx)
+	if err != nil {
+		return err
+	}
+	fn := sqlitex.Transaction(conn)
+	defer func() {
+		fn(&err)
+		cs.Pool.Put(conn)
+	}()
 	for _, device := range cs.devices {
-		err = cs.upsertDevice(ctx, device)
+		err = upsertDevice(conn, device)
 		if err != nil {
 			return err
 		}
@@ -228,8 +240,8 @@ func (cs *Store) selectDevices(ctx context.Context) (devices []model.Device, err
 	return devices, err
 }
 
-func (cs *Store) upsertDevice(ctx context.Context, d model.Device) error {
-	stmt, err := cs.DB.Prepare(
+func upsertDevice(conn *sqlite.Conn, d model.Device) error {
+	stmt, err := conn.Prepare(
 		`INSERT INTO devices (
       name, addr, mac, discoveredat, discoveredby,
       metadnsname, metamanufacturer, metatags,

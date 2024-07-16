@@ -45,6 +45,7 @@ type ctentry struct {
 }
 
 type asnstorer interface {
+	StartAsnLoad() func(*error)
 	UpsertAsn(context.Context, model.Asn) error
 }
 
@@ -92,6 +93,11 @@ func savefulldb(ctx context.Context, store asnstorer, db []asnCountryEntry) (err
 	if store == nil {
 		return errors.New("asnstorer is nil")
 	}
+
+	fn := store.StartAsnLoad()
+	defer func() {
+		fn(&err)
+	}()
 	for _, entry := range db {
 		err = store.UpsertAsn(ctx, fullToModelAsn(entry))
 		if err != nil {

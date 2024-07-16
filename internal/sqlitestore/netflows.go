@@ -10,13 +10,25 @@ import (
 	"strconv"
 	"time"
 
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+
 	"github.com/networkables/mason/internal/model"
 )
 
 // AddNetflows adds a network to the store, will return error if the network already exists in the store
 func (cs *Store) AddNetflows(ctx context.Context, flows []model.IpFlow) (err error) {
+	conn, err := cs.Pool.Take(ctx)
+	if err != nil {
+		return err
+	}
+	fn := sqlitex.Transaction(conn)
+	defer func() {
+		fn(&err)
+		cs.Pool.Put(conn)
+	}()
 	for _, flow := range flows {
-		err = cs.insertNetflow(ctx, flow)
+		err = insertNetflow(conn, flow)
 		if err != nil {
 			return err
 		}
@@ -31,8 +43,8 @@ func (cs *Store) GetNetflows(
 	return cs.selectNetflow(ctx, addr)
 }
 
-func (cs *Store) insertNetflow(ctx context.Context, n model.IpFlow) error {
-	stmt, err := cs.DB.Prepare(
+func insertNetflow(conn *sqlite.Conn, n model.IpFlow) error {
+	stmt, err := conn.Prepare(
 		`INSERT INTO flows (start, end, srcaddr, srcport, srcasn, dstaddr, dstport, dstasn, protocol, bytes, packets)
     VALUES (:start, :end, :srcaddr, :srcport, :srcasn, :dstaddr, :dstport, :dstasn, :protocol, :bytes, :packets)
 		`,

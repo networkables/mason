@@ -8,6 +8,9 @@ import (
 	"context"
 	"time"
 
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+
 	"github.com/networkables/mason/internal/model"
 	"github.com/networkables/mason/internal/pinger"
 	"github.com/networkables/mason/nettools"
@@ -20,7 +23,16 @@ func (cs *Store) WritePerformancePing(
 	device model.Device,
 	point nettools.Icmp4EchoResponseStatistics,
 ) (err error) {
-	err = cs.insertPerformancePing(ctx, timestamp, device.Addr, point)
+	conn, err := cs.Pool.Get(ctx)
+	if err != nil {
+		return err
+	}
+	fn := sqlitex.Transaction(conn)
+	defer func() {
+		fn(&err)
+		cs.Pool.Put(conn)
+	}()
+	err = insertPerformancePing(conn, timestamp, device.Addr, point)
 	if err != nil {
 		return err
 	}
@@ -81,13 +93,13 @@ func (cs *Store) selectPerformancePings(
 	return points, err
 }
 
-func (cs *Store) insertPerformancePing(
-	ctx context.Context,
+func insertPerformancePing(
+	conn *sqlite.Conn,
 	ts time.Time,
 	addr model.Addr,
 	p nettools.Icmp4EchoResponseStatistics,
 ) (err error) {
-	stmt, err := cs.DB.Prepare(
+	stmt, err := conn.Prepare(
 		`insert into performancepings (start, addr, minimum, average, maximum, loss)
     values (:start, :addr, :minimum, :average, :maximum, :loss)`)
 	if err != nil {

@@ -27,7 +27,7 @@ func createTestDatabase(t *testing.T) *Store {
 		Directory:             testdbdir,
 		Filename:              "unittest.db",
 		URL:                   "",
-		MaxOpenConnections:    1,
+		MaxOpenConnections:    2,
 		MaxIdleConnections:    1,
 		ConnectionMaxLifetime: time.Minute,
 		ConnectionMaxIdle:     time.Minute,
